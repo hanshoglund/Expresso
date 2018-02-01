@@ -119,15 +119,15 @@ deriving instance Applicative EvalM
 deriving instance Monad EvalM
 deriving instance MonadError String EvalM
 
-newtype Thunk qq = Thunk { force_ :: EvalM (Value qq) }
+newtype Thunk qq = Thunk { force_ :: qq (Value qq) }
 
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
 
 class ApplicativeMonadError String f => MonadEval f where
-  force    :: Thunk qq -> f (Value qq)
-  delay    :: f (Value qq) -> Thunk qq
-  liftEval :: EvalM a -> f a
+  force    :: Thunk f -> f (Value f)
+  delay    :: f (Value f) -> Thunk f
+  liftEval :: f a -> f a
 
 instance Alternative EvalM where
   EvalM a <|> EvalM b = EvalM (a <|> b)
@@ -139,9 +139,10 @@ instance MonadEval EvalM where
 
 {- mkThunk :: (MonadEval f, Monad g) => f (Value qq) -> g (Thunk qq) -}
 
-mkThunk :: (MonadEval f, Monad m) => f (Value qq) -> m (Thunk qq)
+mkThunk :: (MonadEval f, Monad m) => f (Value f) -> m (Thunk f)
 mkThunk = return . delay
-mkThunk' :: (MonadEval f) => f (Value qq) -> f (Thunk qq)
+
+mkThunk' :: (MonadEval f) => f (Value f) -> f (Thunk f)
 mkThunk' = return . delay
 
 {- data EvalIO a = EvalIO { runEvalIO :: IO a } -}
@@ -164,7 +165,7 @@ instance Show (Thunk qq) where
 
 
 data Value qq
-  = VLam     !(Thunk qq -> EvalM (Value qq))
+  = VLam     !(Thunk qq -> qq (Value qq))
   | VInt     !Integer
   | VDbl     !Double
   | VBool    !Bool
@@ -174,10 +175,10 @@ data Value qq
   | VRecord  !(HashMap Label (Thunk qq)) -- field order no defined
   | VVariant !Label !(Thunk qq)
 
-instance Show (Value qq) where
+instance Show (Value EvalM) where
   show = showR . runEvalM' . ppValue'
 
-valueToThunk :: Value qq -> Thunk qq
+valueToThunk :: Applicative qq => Value qq -> Thunk qq
 valueToThunk = Thunk . pure
 
 -- | This does *not* evaluate deeply
@@ -204,7 +205,7 @@ ppParensValue v =
         _          -> ppValue v
 
 -- | This evaluates deeply
-ppValue' :: Value qq -> EvalM Doc
+ppValue' :: MonadEval qq => Value qq -> qq Doc
 ppValue' (VRecord m) = (bracesList . map ppEntry . List.sortBy (comparing fst) . HashMap.toList)
                            <$> mapM (force >=> ppValue') m
   where
@@ -212,7 +213,7 @@ ppValue' (VRecord m) = (bracesList . map ppEntry . List.sortBy (comparing fst) .
 ppValue' (VVariant l t) = (text l <+>) <$> (force >=> ppParensValue') t
 ppValue' v = return $ ppValue v
 
-ppParensValue' :: Value qq -> EvalM Doc
+ppParensValue' :: MonadEval qq => Value qq -> qq Doc
 ppParensValue' v =
     case v of
         {- VMaybe{}   -> parens <$> ppValue' v -}
@@ -228,12 +229,12 @@ runEvalM' :: EvalM a -> Either String a
 runEvalM' = runIdentity . runExceptT . runEvalT
 
 
-eval :: Env qq -> Exp -> EvalM (Value qq)
+eval :: forall qq . MonadEval qq => Env qq -> Exp -> qq (Value qq)
 eval env e = cata alg e env
   where
-    alg :: (ExpF Name Bind Type :*: K Pos) (Env qq -> EvalM (Value qq))
+    alg :: (ExpF Name Bind Type :*: K Pos) (Env qq -> qq (Value qq))
         -> Env qq
-        -> EvalM (Value qq)
+        -> qq (Value qq)
     alg (EVar v :*: _)         env = lookupValue env v >>= force
     alg (EApp f x :*: K pos)   env = do
         f' <- f env
@@ -248,17 +249,17 @@ eval env e = cata alg e env
     alg (EPrim p :*: K pos)    _   = return $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
-evalLam :: Env qq -> Bind Name -> (Env qq -> EvalM (Value qq)) -> EvalM (Value qq)
+evalLam :: MonadEval qq => Env qq -> Bind Name -> (Env qq -> qq (Value qq)) -> qq (Value qq)
 evalLam env b e = return $ VLam $ \x ->
     bind env b x >>= e
 
-evalApp :: Pos -> Value qq -> Thunk qq -> EvalM (Value qq)
+evalApp :: MonadEval qq => Pos -> Value qq -> Thunk qq -> qq (Value qq)
 evalApp _   (VLam f)   t  = f t
 evalApp pos fv         _  =
     throwError $ show pos ++ " : Expected a function, but got: " ++
                  show (ppValue fv)
 
-evalPrim :: forall qq . Pos -> Prim -> Value qq
+evalPrim :: forall qq . MonadEval qq => Pos -> Prim -> Value qq
 evalPrim pos p = case p of
     Int i         -> VInt i
     Dbl d         -> VDbl d
@@ -362,7 +363,7 @@ evalPrim pos p = case p of
         let g a b = do g' <- evalApp pos f (Thunk $ return a)
                        evalApp pos g' (Thunk $ return b)
         z'  <- force z
-        xs' <- (force >=> fromValueL return) xs :: EvalM [Value qq]
+        xs' <- (force >=> fromValueL return) xs -- :: EvalM [Value qq]
         foldrM g z' xs'
     RecordExtend l   -> VLam $ \v -> return $ VLam $ \r ->
         (VRecord . HashMap.insert l v) <$> (force >=> fromValueRTh) r
@@ -387,13 +388,13 @@ evalPrim pos p = case p of
 
 
 -- non-strict bind
-bind :: Env qq -> Bind Name -> Thunk qq -> EvalM (Env qq)
+bind :: MonadEval qq => Env qq -> Bind Name -> Thunk qq -> qq (Env qq)
 bind env b t = case b of
     Arg n -> return $ HashMap.insert n t env
     _     -> bind' env b t
 
 -- strict bind
-bind' :: Env qq -> Bind Name -> Thunk qq -> EvalM (Env qq)
+bind' :: MonadEval f => Env f -> Bind Name -> Thunk f -> f (Env f)
 bind' env b t = do
   v <- force t
   case (b, v) of
@@ -405,31 +406,31 @@ bind' env b t = do
         return $ env <> m
     _ -> throwError $ "Cannot bind the pair: " ++ show b ++ " = " ++ show (ppValue v)
 
-lookupValue :: Env qq -> Name -> EvalM (Thunk qq)
+lookupValue :: MonadEval f => Env f -> Name -> f (Thunk f)
 lookupValue env n = maybe err return $ HashMap.lookup n env
   where
     err = throwError $ "Not found: " ++ show n
 
-failOnValues :: Pos -> [Value qq] -> EvalM a
+failOnValues :: MonadEval f => Pos -> [Value qq] -> f a
 failOnValues pos vs = throwError $ show pos ++ " : Unexpected value(s) : " ++
                                    show (parensList (map ppValue vs))
 
-mkStrictLam :: (Value qq -> EvalM (Value qq)) -> Value qq
+mkStrictLam :: MonadEval f => (Value f -> f (Value f)) -> Value f
 mkStrictLam f = VLam $ \x -> force x >>= f
 
-mkStrictLam2 :: (Value qq -> Value qq -> EvalM (Value qq)) -> Value qq
+mkStrictLam2 :: MonadEval f => (Value f -> Value f -> f (Value f)) -> Value f
 mkStrictLam2 f = mkStrictLam $ \v -> return $ mkStrictLam $ f v
 
-fromValue' :: (MonadEval f, FromValue a) => Thunk qq -> f a
+fromValue' :: (MonadEval f, FromValue a) => Thunk f -> f a
 fromValue' = force >=> fromValue
 
-numOp :: Pos -> (forall a. Num a => a -> a -> a) -> Value qq -> Value qq -> EvalM (Value qq)
+numOp :: MonadEval f => Pos -> (forall a. Num a => a -> a -> a) -> Value f -> Value f -> f (Value f)
 numOp _ op (VInt x) (VInt y) = return $ VInt $ x `op` y
 numOp _ op (VDbl x) (VDbl y) = return $ VDbl $ x `op` y
 numOp p _  v1       v2       = failOnValues p [v1, v2]
 
 -- NB: evaluates deeply
-equalValues :: Pos -> Value qq -> Value qq -> EvalM Bool
+equalValues :: MonadEval f => Pos -> Value f -> Value f -> f Bool
 equalValues _ (VInt i1)    (VInt i2)    = return $ i1 == i2
 equalValues _ (VDbl d1)    (VDbl d2)    = return $ d1 == d2
 equalValues _ (VBool b1)   (VBool b2)   = return $ b1 == b2
@@ -454,7 +455,7 @@ equalValues p (VVariant l1 v1) (VVariant l2 v2)
 equalValues p v1 v2 = failOnValues p [v1, v2]
 
 -- NB: evaluates deeply
-compareValues :: Pos -> Value qq -> Value qq -> EvalM Ordering
+compareValues :: MonadEval f => Pos -> Value qq -> Value qq -> f Ordering
 compareValues _ (VInt i1)    (VInt i2)    = return $ compare i1 i2
 compareValues _ (VDbl d1)    (VDbl d2)    = return $ compare d1 d2
 compareValues _ (VBool b1)   (VBool b2)   = return $ compare b1 b2
@@ -515,23 +516,23 @@ class HasType a where
 -- fromValue . toValue = pure
 -- @
 class HasType a => ToValue a where
-    toValue :: ToValue a => a -> Value qq
-    default toValue :: (G.Generic a, GToValue (G.Rep a)) => a -> Value qq
+    toValue :: ToValue a => a -> Value Identity
+    default toValue :: (G.Generic a, GToValue (G.Rep a)) => a -> Value Identity
     toValue = renderADTValue . improveADT . gtoValue defaultOptions . G.from
 
 -- | Haskell types whose values can be represented by Expresso values.
 class HasType a => FromValue a where
-    fromValue :: MonadEval f => Value qq -> f a
-    default fromValue :: (G.Generic a, ADFor (G.Rep a) ~ Var, GFromValue (G.Rep a), MonadEval f) => Value qq -> f a
+    fromValue :: MonadEval f => Value f -> f a
+    default fromValue :: (G.Generic a, ADFor (G.Rep a) ~ Var, GFromValue (G.Rep a), MonadEval f) => Value f -> f a
     fromValue = runParser . fmap G.to . renderADParser . fixADNames $ gfromValue defaultOptions Proxy
 
 class GHasType f where
     gtypeOf :: Options -> Proxy (f x) -> Either Type (ADT Type)
 class GHasType f => GToValue f where
-    gtoValue :: Options -> f x -> ADT (Value qq)
+    gtoValue :: Options -> f x -> ADT (Value Identity)
 class GHasType f => GFromValue f where
     type ADFor f :: C
-    gfromValue :: MonadEval g => Options -> Proxy (f x) -> AD (ADFor f) (Parser qq g) (f x)
+    gfromValue :: MonadEval g => Options -> Proxy (f x) -> AD (ADFor f) (Parser g g) (f x)
 
 -- | This thing is passed around when traversing generic representations of Haskell types to keep track
 -- of the surrounding context. We need this to properly decompose Haskell ADTs with >2 constructors into
@@ -675,11 +676,13 @@ renderADT (ADT outer)
         inner
 
 
-renderADTValue :: ADT (Value qq) -> Value qq
+renderADTValue :: Applicative qq => ADT (Value qq) -> Value qq
 renderADTValue (ADT outer)
   = foldOrSingle
     -- TODO clean up this error printing...
-    id (\k v r -> error $ "unexpected variant with >1 element" <> show (k,runEvalM'.ppValue' $ g v,runEvalM'.ppValue' $ r)) (error "absurd!")
+    id (\k v r -> error $ "unexpected variant with >1 element"
+          -- <> show (k,runEvalM'.ppValue' $ g v,runEvalM'.ppValue' $ r)
+          ) (error "absurd!")
     (\k v -> VVariant k $ valueToThunk $ g v)
     outer
   where
@@ -752,10 +755,10 @@ fixADNames x = evalState (go x) RecNamesInit
     go' x@Coprod{} = go x
     go' x@Constructor{} = go x
 
-renderADParser :: MonadEval f => AD Var (Parser qq f) a -> Parser qq f a
+renderADParser :: MonadEval f => AD Var (Parser f f) a -> Parser f f a
 renderADParser x = evalState (go x) 0
   where
-    go :: forall qq f a . MonadEval f => AD Var (Parser qq f) a -> State Int (Parser qq f a)
+    go :: forall f a . MonadEval f => AD Var (Parser f f) a -> State Int (Parser f f a)
     go Initial = pure empty
     go (Coprod f g x y) = liftA2 (<|>) (fmap f <$> go x) (fmap g <$> go y)
     go (Constructor k a) = do
@@ -766,7 +769,7 @@ renderADParser x = evalState (go x) 0
           runParser p y
         _ -> throwError $ "Bad variant, wanted " <> k <> " got (" <> show (ppValue x) <> ")"
 
-    go' :: forall qq f x a . MonadEval f => AD x (Parser qq f) a -> State Int (Parser qq f a)
+    go' :: forall f x a . MonadEval f => AD x (Parser f f) a -> State Int (Parser f f a)
     go' (Singleton p) = pure p
     go' (Terminal x) = pure x
     go' (Prod f x y) = do
@@ -784,9 +787,9 @@ renderADParser x = evalState (go x) 0
                 v <- force th
                 runParser p v
               _ -> fail k m
-            _ -> throwError $ "Not a record, wanted '"<> k <>"', got (" <> (showR $ runEvalM' $ ppValue' x) <> ")"
+            _ -> throwError $ "Not a record" -- FIXME, wanted '"<> k <>"', got (" <> (showR $ runEvalM' $ ppValue' x) <> ")"
       where
-        fail k m = throwError $ "Bad record, wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
+        fail k m = throwError $ "Bad record" -- FIXME , wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
 
     go' x@Initial{} = go x
     go' x@Coprod{} = go x
@@ -1053,29 +1056,30 @@ instance HasType Char where
 instance (HasType a, HasType b) => HasType (a -> f b) where
     typeOf p = _TFun (typeOf $ dom p) (typeOf $ inside $ inside p)
 
-instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
-    fromValue (VLam f) = pure  $ \x -> liftEval $ do
-      x' <- mkThunk' $ pure $ toValue x
-      r <- f x'
-      fromValue r
-      where
-        -- TODO for now we always run in the pure evaluation monad (which is
-        -- hardcoded in the Value type).
-        --
-        -- This natural transformation lifts the evaluator into the user-providec
-        -- evaluator. In theory we could parameterize (Exp, Value, Type) etc
-        -- on some effect algebra and provide the interpreter function here.
-        {- liftEval = id -- either throwError pure . runEvalM' -}
+-- FIXME
+{- instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where -}
+    {- fromValue (VLam f) = pure  $ \x -> liftEval $ do -}
+      {- x' <- mkThunk' $ pure $ toValue x -}
+      {- r <- f x' -}
+      {- fromValue r -}
+      {- where -}
+        {- -- TODO for now we always run in the pure evaluation monad (which is -}
+        {- -- hardcoded in the Value type). -}
+        {- -- -}
+        {- -- This natural transformation lifts the evaluator into the user-providec -}
+        {- -- evaluator. In theory we could parameterize (Exp, Value, Type) etc -}
+        {- -- on some effect algebra and provide the interpreter function here. -}
+        {- {- liftEval = id -- either throwError pure . runEvalM' -} -}
 
-    fromValue v           = failfromValue "VLam" v
+    {- fromValue v           = failfromValue "VLam" v -}
 
-fv2 :: (MonadEval m, FromValue b, ToValue a) =>
-     Value qq -> a -> m b
-fv2 = (\f a b -> (f a >>= ($ b))) fromValue
+{- fv2 :: (MonadEval m, FromValue b, ToValue a) => -}
+     {- Value qq -> a -> m b -}
+{- fv2 = (\f a b -> (f a >>= ($ b))) fromValue -}
 
-fv3 :: (MonadEval m, FromValue r, ToValue a, ToValue b) =>
-     Value qq -> a -> b -> m r
-fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue
+{- fv3 :: (MonadEval m, FromValue r, ToValue a, ToValue b) => -}
+     {- Value qq -> a -> b -> m r -}
+{- fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue -}
 
 
 
@@ -1219,13 +1223,15 @@ instance (FromValue a, FromValue b, FromValue c) => FromValue (Choice3 a b c)
 
 -- TODO test
 roundTrip :: (ToValue a, FromValue a) => a -> Either String a
-roundTrip = runEvalM' . fromValue . toValue
+roundTrip = undefined
+{- roundTrip = runEvalM' . fromValue . pureM . toValue -}
+  {- where -}
+    {- pureM = pure . runIdentity -}
 
 
 -- FIXME debug
 {- traceV :: Value -> Value -}
 {- traceV x = trace (showR . runEvalM' $ ppValue' x) x -}
-  where
 showR (Right x) = show x
 showR (Left e) = "<<Error:" <> show e <> ">>"
 
