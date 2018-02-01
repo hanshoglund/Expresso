@@ -39,16 +39,17 @@
 --
 module Expresso.Eval(
     eval
+  , bind
+  , mkThunk
+  , ppValue
+  , ppValue'
+
   , runEvalM'
   , runEvalIO
   , Env
   , EvalM
   , Value(..)
-  , ppValue
-  , ppValue'
-  , force
-  , mkThunk
-  , bind
+  {- , force -}
 
   , HasType(..)
   , FromValue(..)
@@ -110,7 +111,7 @@ import Data.Traversable
 -- |
 -- Call-by-need environment
 -- A HashMap makes it easy to support record wildcards
-type Env = HashMap Name Thunk
+type Env f = HashMap Name (Thunk f)
 
 newtype EvalM a = EvalM { runEvalT :: ExceptT String Identity a }
 deriving instance Functor EvalM
@@ -118,12 +119,12 @@ deriving instance Applicative EvalM
 deriving instance Monad EvalM
 deriving instance MonadError String EvalM
 
-newtype Thunk = Thunk { force_ :: EvalM Value }
+newtype Thunk qq = Thunk { force_ :: EvalM (Value qq) }
 
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
 class ApplicativeMonadError String f => MonadEval f where
-  force :: Thunk -> f Value
+  force :: Thunk q -> f (Value q)
 instance Alternative EvalM where
   EvalM a <|> EvalM b = EvalM (a <|> b)
   empty = EvalM empty
@@ -146,31 +147,31 @@ runEvalIO :: EvalM a -> IO a
 runEvalIO = either error pure . runEvalM'
 
 
-instance Show Thunk where
+instance Show (Thunk qq) where
     show _ = "<Thunk>"
 
-mkThunk :: EvalM Value -> EvalM Thunk
+mkThunk :: EvalM (Value qq) -> EvalM (Thunk qq)
 mkThunk = return . Thunk
 
-data Value
-  = VLam     !(Thunk -> EvalM Value)
+data Value qq
+  = VLam     !(Thunk qq -> EvalM (Value qq))
   | VInt     !Integer
   | VDbl     !Double
   | VBool    !Bool
   | VChar    !Char
   {- | VMaybe   !(Maybe Value) -}
-  | VList    ![Value] -- lists are strict
-  | VRecord  !(HashMap Label Thunk) -- field order no defined
-  | VVariant !Label !Thunk
+  | VList    ![Value qq] -- lists are strict
+  | VRecord  !(HashMap Label (Thunk qq)) -- field order no defined
+  | VVariant !Label !(Thunk qq)
 
-instance Show Value where
+instance Show (Value qq) where
   show = showR . runEvalM' . ppValue'
 
-valueToThunk :: Value -> Thunk
+valueToThunk :: Value qq -> Thunk qq
 valueToThunk = Thunk . pure
 
 -- | This does *not* evaluate deeply
-ppValue :: Value -> Doc
+ppValue :: Value qq -> Doc
 ppValue (VLam  _)   = "<Lambda>"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
@@ -185,7 +186,7 @@ ppValue (VRecord m) = bracesList $ map ppEntry $ HashMap.keys m
     ppEntry l = text l <+> "=" <+> "<Thunk>"
 ppValue (VVariant l _) = text l <+> "<Thunk>"
 
-ppParensValue :: Value -> Doc
+ppParensValue :: Value qq -> Doc
 ppParensValue v =
     case v of
         {- VMaybe{}   -> parens $ ppValue v -}
@@ -193,7 +194,7 @@ ppParensValue v =
         _          -> ppValue v
 
 -- | This evaluates deeply
-ppValue' :: Value -> EvalM Doc
+ppValue' :: Value qq -> EvalM Doc
 ppValue' (VRecord m) = (bracesList . map ppEntry . List.sortBy (comparing fst) . HashMap.toList)
                            <$> mapM (force >=> ppValue') m
   where
@@ -201,14 +202,14 @@ ppValue' (VRecord m) = (bracesList . map ppEntry . List.sortBy (comparing fst) .
 ppValue' (VVariant l t) = (text l <+>) <$> (force >=> ppParensValue') t
 ppValue' v = return $ ppValue v
 
-ppParensValue' :: Value -> EvalM Doc
+ppParensValue' :: Value qq -> EvalM Doc
 ppParensValue' v =
     case v of
         {- VMaybe{}   -> parens <$> ppValue' v -}
         VVariant{} -> parens <$> ppValue' v
         _          -> ppValue' v
 
-extractChar :: Value -> Maybe Char
+extractChar :: Value qq -> Maybe Char
 extractChar (VChar c) = Just c
 extractChar _ = Nothing
 
@@ -217,12 +218,12 @@ runEvalM' :: EvalM a -> Either String a
 runEvalM' = runIdentity . runExceptT . runEvalT
 
 
-eval :: Env -> Exp -> EvalM Value
+eval :: Env qq -> Exp -> EvalM (Value qq)
 eval env e = cata alg e env
   where
-    alg :: (ExpF Name Bind Type :*: K Pos) (Env -> EvalM Value)
-        -> Env
-        -> EvalM Value
+    alg :: (ExpF Name Bind Type :*: K Pos) (Env qq -> EvalM (Value qq))
+        -> Env qq
+        -> EvalM (Value qq)
     alg (EVar v :*: _)         env = lookupValue env v >>= force
     alg (EApp f x :*: K pos)   env = do
         f' <- f env
@@ -237,17 +238,17 @@ eval env e = cata alg e env
     alg (EPrim p :*: K pos)    _   = return $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
-evalLam :: Env -> Bind Name -> (Env -> EvalM Value) -> EvalM Value
+evalLam :: Env qq -> Bind Name -> (Env qq -> EvalM (Value qq)) -> EvalM (Value qq)
 evalLam env b e = return $ VLam $ \x ->
     bind env b x >>= e
 
-evalApp :: Pos -> Value -> Thunk -> EvalM Value
+evalApp :: Pos -> Value qq -> Thunk qq -> EvalM (Value qq)
 evalApp _   (VLam f)   t  = f t
 evalApp pos fv         _  =
     throwError $ show pos ++ " : Expected a function, but got: " ++
                  show (ppValue fv)
 
-evalPrim :: Pos -> Prim -> Value
+evalPrim :: forall qq . Pos -> Prim -> Value qq
 evalPrim pos p = case p of
     Int i         -> VInt i
     Dbl d         -> VDbl d
@@ -341,7 +342,7 @@ evalPrim pos p = case p of
 
     ListEmpty     -> VList []
     ListNull      -> VLam $ \xs ->
-        (VBool . (null :: [Value] -> Bool)) <$> (force >=> fromValueL return) xs
+        (VBool . (null :: [Value qq] -> Bool)) <$> (force >=> fromValueL return) xs
     ListCons      -> VLam $ \x -> return $ VLam $ \xs ->
         VList <$> ((:) <$> force x <*> (force >=> fromValueL return) xs)
     ListAppend    -> VLam $ \xs -> return $ VLam $ \ys ->
@@ -351,7 +352,7 @@ evalPrim pos p = case p of
         let g a b = do g' <- evalApp pos f (Thunk $ return a)
                        evalApp pos g' (Thunk $ return b)
         z'  <- force z
-        xs' <- (force >=> fromValueL return) xs :: EvalM [Value]
+        xs' <- (force >=> fromValueL return) xs :: EvalM [Value qq]
         foldrM g z' xs'
     RecordExtend l   -> VLam $ \v -> return $ VLam $ \r ->
         (VRecord . HashMap.insert l v) <$> (force >=> fromValueRTh) r
@@ -376,13 +377,13 @@ evalPrim pos p = case p of
 
 
 -- non-strict bind
-bind :: Env -> Bind Name -> Thunk -> EvalM Env
+bind :: Env qq -> Bind Name -> Thunk qq -> EvalM (Env qq)
 bind env b t = case b of
     Arg n -> return $ HashMap.insert n t env
     _     -> bind' env b t
 
 -- strict bind
-bind' :: Env -> Bind Name -> Thunk -> EvalM Env
+bind' :: Env qq -> Bind Name -> Thunk qq -> EvalM (Env qq)
 bind' env b t = do
   v <- force t
   case (b, v) of
@@ -394,31 +395,31 @@ bind' env b t = do
         return $ env <> m
     _ -> throwError $ "Cannot bind the pair: " ++ show b ++ " = " ++ show (ppValue v)
 
-lookupValue :: Env -> Name -> EvalM Thunk
+lookupValue :: Env qq -> Name -> EvalM (Thunk qq)
 lookupValue env n = maybe err return $ HashMap.lookup n env
   where
     err = throwError $ "Not found: " ++ show n
 
-failOnValues :: Pos -> [Value] -> EvalM a
+failOnValues :: Pos -> [Value qq] -> EvalM a
 failOnValues pos vs = throwError $ show pos ++ " : Unexpected value(s) : " ++
                                    show (parensList (map ppValue vs))
 
-mkStrictLam :: (Value -> EvalM Value) -> Value
+mkStrictLam :: (Value qq -> EvalM (Value qq)) -> Value qq
 mkStrictLam f = VLam $ \x -> force x >>= f
 
-mkStrictLam2 :: (Value -> Value -> EvalM Value) -> Value
+mkStrictLam2 :: (Value qq -> Value qq -> EvalM (Value qq)) -> Value qq
 mkStrictLam2 f = mkStrictLam $ \v -> return $ mkStrictLam $ f v
 
-fromValue' :: (MonadEval f, FromValue a) => Thunk -> f a
+fromValue' :: (MonadEval f, FromValue a) => Thunk qq -> f a
 fromValue' = force >=> fromValue
 
-numOp :: Pos -> (forall a. Num a => a -> a -> a) -> Value -> Value -> EvalM Value
+numOp :: Pos -> (forall a. Num a => a -> a -> a) -> Value qq -> Value qq -> EvalM (Value qq)
 numOp _ op (VInt x) (VInt y) = return $ VInt $ x `op` y
 numOp _ op (VDbl x) (VDbl y) = return $ VDbl $ x `op` y
 numOp p _  v1       v2       = failOnValues p [v1, v2]
 
 -- NB: evaluates deeply
-equalValues :: Pos -> Value -> Value -> EvalM Bool
+equalValues :: Pos -> Value qq -> Value qq -> EvalM Bool
 equalValues _ (VInt i1)    (VInt i2)    = return $ i1 == i2
 equalValues _ (VDbl d1)    (VDbl d2)    = return $ d1 == d2
 equalValues _ (VBool b1)   (VBool b2)   = return $ b1 == b2
@@ -443,14 +444,14 @@ equalValues p (VVariant l1 v1) (VVariant l2 v2)
 equalValues p v1 v2 = failOnValues p [v1, v2]
 
 -- NB: evaluates deeply
-compareValues :: Pos -> Value -> Value -> EvalM Ordering
+compareValues :: Pos -> Value qq -> Value qq -> EvalM Ordering
 compareValues _ (VInt i1)    (VInt i2)    = return $ compare i1 i2
 compareValues _ (VDbl d1)    (VDbl d2)    = return $ compare d1 d2
 compareValues _ (VBool b1)   (VBool b2)   = return $ compare b1 b2
 compareValues _ (VChar c1)   (VChar c2)   = return $ compare c1 c2
 compareValues p (VList xs)   (VList ys)   = go xs ys
   where
-    go :: [Value] -> [Value] -> EvalM Ordering
+    {- go :: [Value] -> [Value] -> EvalM Ordering -}
     go []      []      = return EQ
     go (_:_)   []      = return GT
     go []      (_:_)   = return LT
@@ -504,24 +505,23 @@ class HasType a where
 -- fromValue . toValue = pure
 -- @
 class HasType a => ToValue a where
-    toValue :: ToValue a => a -> Value
-    default toValue :: (G.Generic a, GToValue (G.Rep a)) => a -> Value
+    toValue :: ToValue a => a -> Value qq
+    default toValue :: (G.Generic a, GToValue (G.Rep a)) => a -> Value qq
     toValue = renderADTValue . improveADT . gtoValue defaultOptions . G.from
 
 -- | Haskell types whose values can be represented by Expresso values.
 class HasType a => FromValue a where
-    fromValue :: MonadEval f => Value -> f a
-    default fromValue :: (G.Generic a, ADFor (G.Rep a) ~ Var, GFromValue (G.Rep a), MonadEval f) => Value -> f a
+    fromValue :: MonadEval f => Value qq -> f a
+    default fromValue :: (G.Generic a, ADFor (G.Rep a) ~ Var, GFromValue (G.Rep a), MonadEval f) => Value qq -> f a
     fromValue = runParser . fmap G.to . renderADParser . fixADNames $ gfromValue defaultOptions Proxy
-    {- fromValue = error "fromValue" -}
 
 class GHasType f where
     gtypeOf :: Options -> Proxy (f x) -> Either Type (ADT Type)
 class GHasType f => GToValue f where
-    gtoValue :: Options -> f x -> ADT Value
+    gtoValue :: Options -> f x -> ADT (Value qq)
 class GHasType f => GFromValue f where
     type ADFor f :: C
-    gfromValue :: MonadEval g => Options -> Proxy (f x) -> AD (ADFor f) (Parser g) (f x)
+    gfromValue :: MonadEval g => Options -> Proxy (f x) -> AD (ADFor f) (Parser qq g) (f x)
 
 -- | This thing is passed around when traversing generic representations of Haskell types to keep track
 -- of the surrounding context. We need this to properly decompose Haskell ADTs with >2 constructors into
@@ -665,7 +665,7 @@ renderADT (ADT outer)
         inner
 
 
-renderADTValue :: ADT Value -> Value
+renderADTValue :: ADT (Value qq) -> Value qq
 renderADTValue (ADT outer)
   = foldOrSingle
     -- TODO clean up this error printing...
@@ -688,7 +688,7 @@ renderADTValue (ADT outer)
 --     runParser = getCompose
 
 -- FIXME when composed with EvalM, this concatenates error messages...
-type Parser f = ReaderT Value f
+type Parser qq f = ReaderT (Value qq) f
 _Parser = ReaderT
 runParser = runReaderT
 
@@ -706,8 +706,8 @@ nextName = do
       put $ RecNames $ n + 1
       pure $ Just $ "_" <> show n
 
-chooseP :: Alternative f => Parser f a -> Parser f a -> Parser f a
-chooseP = (<|>)
+{- chooseP :: Alternative f => Parser f a -> Parser f a -> Parser f a -}
+{- chooseP = (<|>) -}
 
 -- FIXME
 {- traceP x = trace (show x) x -}
@@ -742,12 +742,12 @@ fixADNames x = evalState (go x) RecNamesInit
     go' x@Coprod{} = go x
     go' x@Constructor{} = go x
 
-renderADParser :: MonadEval f => AD Var (Parser f) a -> Parser f a
+renderADParser :: MonadEval f => AD Var (Parser qq f) a -> Parser qq f a
 renderADParser x = evalState (go x) 0
   where
-    go :: forall f a . MonadEval f => AD Var (Parser f) a -> State Int (Parser f a)
+    go :: forall qq f a . MonadEval f => AD Var (Parser qq f) a -> State Int (Parser qq f a)
     go Initial = pure empty
-    go (Coprod f g x y) = liftA2 (chooseP) (fmap f <$> go x) (fmap g <$> go y)
+    go (Coprod f g x y) = liftA2 (<|>) (fmap f <$> go x) (fmap g <$> go y)
     go (Constructor k a) = do
       p <- go' a
       pure $ _Parser $ \x -> case x of
@@ -756,7 +756,7 @@ renderADParser x = evalState (go x) 0
           runParser p y
         _ -> throwError $ "Bad variant, wanted " <> k <> " got (" <> show (ppValue x) <> ")"
 
-    go' :: forall f x a . MonadEval f => AD x (Parser f) a -> State Int (Parser f a)
+    go' :: forall qq f x a . MonadEval f => AD x (Parser qq f) a -> State Int (Parser qq f a)
     go' (Singleton p) = pure p
     go' (Terminal x) = pure x
     go' (Prod f x y) = do
@@ -1060,11 +1060,11 @@ instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
     fromValue v           = failfromValue "VLam" v
 
 fv2 :: (MonadEval m, FromValue b, ToValue a) =>
-     Value -> a -> m b
+     Value qq -> a -> m b
 fv2 = (\f a b -> (f a >>= ($ b))) fromValue
 
 fv3 :: (MonadEval m, FromValue r, ToValue a, ToValue b) =>
-     Value -> a -> b -> m r
+     Value qq -> a -> b -> m r
 fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue
 
 
@@ -1123,7 +1123,7 @@ instance
     fromValue v           = failfromValue "VString" v
       where
 
-getC :: MonadEval f => Value -> f Char
+getC :: MonadEval f => Value qq -> f Char
 getC (VChar c) = pure c
 getC v = failfromValue "VString" v
 
@@ -1159,7 +1159,7 @@ instance (FromValue a, FromValue b) => FromValue (a, b)
 
 
 
-fromValueL :: MonadError String m => (Value -> m b) -> Value -> m [b]
+fromValueL :: MonadError String m => (Value qq -> m b) -> Value qq -> m [b]
 fromValueL fromValue (VList xs) = mapM fromValue xs
 fromValueL _         v          = failfromValue "VList" v
 
@@ -1169,7 +1169,7 @@ fromValueL _         v          = failfromValue "VList" v
 fromValueRTh (VRecord m) = return m
 fromValueRTh v           = failfromValue "VRecord" v
 
-failfromValue :: MonadError String f => String -> Value -> f a
+failfromValue :: MonadError String f => String -> Value qq -> f a
 failfromValue desc v = throwError $ "Expected a " ++ desc ++
     ", but got: " ++ show (ppValue v)
 
