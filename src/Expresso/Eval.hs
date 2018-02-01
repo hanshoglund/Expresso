@@ -123,14 +123,26 @@ newtype Thunk qq = Thunk { force_ :: EvalM (Value qq) }
 
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
+
 class ApplicativeMonadError String f => MonadEval f where
-  force :: Thunk q -> f (Value q)
+  force    :: Thunk qq -> f (Value qq)
+  delay    :: f (Value qq) -> Thunk qq
+  liftEval :: EvalM a -> f a
+
 instance Alternative EvalM where
   EvalM a <|> EvalM b = EvalM (a <|> b)
   empty = EvalM empty
 instance MonadEval EvalM where
   force = force_
+  delay = Thunk
+  liftEval = id
 
+{- mkThunk :: (MonadEval f, Monad g) => f (Value qq) -> g (Thunk qq) -}
+
+mkThunk :: (MonadEval f, Monad m) => f (Value qq) -> m (Thunk qq)
+mkThunk = return . delay
+mkThunk' :: (MonadEval f) => f (Value qq) -> f (Thunk qq)
+mkThunk' = return . delay
 
 {- data EvalIO a = EvalIO { runEvalIO :: IO a } -}
   {- deriving (Functor, Applicative, Monad) -}
@@ -150,8 +162,6 @@ runEvalIO = either error pure . runEvalM'
 instance Show (Thunk qq) where
     show _ = "<Thunk>"
 
-mkThunk :: EvalM (Value qq) -> EvalM (Thunk qq)
-mkThunk = return . Thunk
 
 data Value qq
   = VLam     !(Thunk qq -> EvalM (Value qq))
@@ -1045,8 +1055,8 @@ instance (HasType a, HasType b) => HasType (a -> f b) where
 
 instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
     fromValue (VLam f) = pure  $ \x -> liftEval $ do
-      x <- (mkThunk $ pure $ toValue x)
-      r <- f x
+      x' <- mkThunk' $ pure $ toValue x
+      r <- f x'
       fromValue r
       where
         -- TODO for now we always run in the pure evaluation monad (which is
@@ -1055,7 +1065,7 @@ instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
         -- This natural transformation lifts the evaluator into the user-providec
         -- evaluator. In theory we could parameterize (Exp, Value, Type) etc
         -- on some effect algebra and provide the interpreter function here.
-        liftEval = either throwError pure . runEvalM'
+        {- liftEval = id -- either throwError pure . runEvalM' -}
 
     fromValue v           = failfromValue "VLam" v
 
