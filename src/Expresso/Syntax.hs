@@ -33,6 +33,7 @@ data ExpF v b t r
   | ELam  (b v) r
   | EAnnLam (b v) t r
   | ELet  (b v) r r
+  | ERef  String t
   | EAnn  r t
   deriving (Show, Functor, Foldable, Traversable)
 

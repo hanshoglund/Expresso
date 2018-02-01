@@ -121,39 +121,50 @@ deriving instance Monad EvalM
 deriving instance MonadError String EvalM
 
 -- (T -> T) -> T
-newtype Thunk qq = Thunk { force_ :: qq (Value qq) }
+type Thunk = ThunkF ()
+newtype ThunkF hof qq = Thunk { force_ :: qq (ValueF hof qq) }
 
 type f ~> g = forall x . f x -> g x
 
-hoistThunk :: Functor f => (f ~> g) -> Thunk f -> Thunk g
+hoistThunk :: Functor f => (f ~> g) -> ThunkF Void f -> ThunkF Void g
 hoistThunk f (Thunk t) = Thunk (f . fmap (hoistValue f) $ t)
 
-hoistValue :: (f ~> g) -> Value f -> Value g
-hoistValue = undefined
+hoistValue :: (f ~> g) -> FirstOrderValue f -> FirstOrderValue g
+hoistValue f = go
+  where
+    go (VLamF _ x) = absurd x
+    go (VInt x) = VInt x
+    go (VDbl x) = VDbl x
+    go (VChar x) = VChar x
+    go (VList x) = error "FIXME"
+
+
+
 
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
 
 class ApplicativeMonadError String f => MonadEval f where
   force    :: Thunk f -> f (Value f)
-  delay    :: f (Value f) -> Thunk f
-  liftEval :: f a -> f a
+  delay    :: f (Value f) -> f (Thunk f)
+  evalRef  :: String -> f (Value f)
 
 instance Alternative EvalM where
   EvalM a <|> EvalM b = EvalM (a <|> b)
   empty = EvalM empty
 instance MonadEval EvalM where
   force = force_
-  delay = Thunk
-  liftEval = id
+  delay = return . Thunk
+  evalRef _ = pure $ VRecord mempty
 
-{- mkThunk :: (MonadEval f, Monad g) => f (Value qq) -> g (Thunk qq) -}
-
-mkThunk :: (MonadEval f, Monad m) => f (Value f) -> m (Thunk f)
-mkThunk = return . delay
+mkThunk :: (MonadEval f) => f (Value f) -> f (Thunk f)
+mkThunk = delay
 
 mkThunk' :: (MonadEval f) => f (Value f) -> f (Thunk f)
-mkThunk' = return . delay
+mkThunk' = delay
+
+valueToThunk :: Applicative qq => Value qq -> Thunk qq
+valueToThunk = Thunk . pure
 
 {- data EvalIO a = EvalIO { runEvalIO :: IO a } -}
   {- deriving (Functor, Applicative, Monad) -}
@@ -173,23 +184,23 @@ runEvalIO = either error pure . runEvalM'
 instance Show (Thunk qq) where
     show _ = "<Thunk>"
 
-
-data Value qq
-  = VLam     !(Thunk qq -> qq (Value qq))
+type FirstOrderValue = ValueF Void
+type Value = ValueF ()
+pattern VLam x = VLamF x ()
+data ValueF hof qq
+  = VLamF     !(ThunkF hof qq -> qq (ValueF hof qq)) hof
   | VInt     !Integer
   | VDbl     !Double
   | VBool    !Bool
   | VChar    !Char
   {- | VMaybe   !(Maybe Value) -}
-  | VList    ![Value qq] -- lists are strict
-  | VRecord  !(HashMap Label (Thunk qq)) -- field order no defined
-  | VVariant !Label !(Thunk qq)
+  | VList    ![ValueF hof qq] -- lists are strict
+  | VRecord  !(HashMap Label (ThunkF hof qq)) -- field order no defined
+  | VVariant !Label !(ThunkF hof qq)
 
 instance Show (Value EvalM) where
   show = showR . runEvalM' . ppValue'
 
-valueToThunk :: Applicative qq => Value qq -> Thunk qq
-valueToThunk = Thunk . pure
 
 -- | This does *not* evaluate deeply
 ppValue :: Value qq -> Doc
@@ -256,6 +267,7 @@ eval env e = cata alg e env
         t    <- mkThunk $ e1 env
         env' <- bind env b t
         e2 env'
+    alg (ERef x _ :*: pos)     _   = evalRef x
     alg (EPrim p :*: K pos)    _   = return $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
@@ -805,9 +817,6 @@ renderADParser x = evalState (go x) 0
     go' x@Coprod{} = go x
     go' x@Constructor{} = go x
 
-liftP2 :: (a -> b -> c) -> f a -> f b -> f c
-{- liftP2 = liftA2 -}
-liftP2 = undefined
 
 -- TODO move
 foldOrSingle :: (b -> c) -> (k -> a -> b -> b) -> b -> (k -> a -> c) -> Map k a -> c
@@ -1066,22 +1075,56 @@ instance HasType Char where
 instance (HasType a, HasType b) => HasType (a -> f b) where
     typeOf p = _TFun (typeOf $ dom p) (typeOf $ inside $ inside p)
 
--- FIXME
-instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
-    fromValue (VLam f) = pure  $ \x -> undefined f x
-      {- x' <- delay $ _ $ toValue x -}
-      {- r <- f x' -}
-      {- fromValue r -}
-      where
-        -- TODO for now we always run in the pure evaluation monad (which is
-        -- hardcoded in the Value type).
-        --
-        -- This natural transformation lifts the evaluator into the user-providec
-        -- evaluator. In theory we could parameterize (Exp, Value, Type) etc
-        -- on some effect algebra and provide the interpreter function here.
-        {- liftEval = id -- either throwError pure . runEvalM' -}
 
-    fromValue v           = failfromValue "VLam" v
+fromValue1 :: (ToValue a, FromValue b, MonadEval f) => Value f -> a -> f b
+fromValue1 (VLam fv) a = do
+  av <- mkThunk' . pure =<< toValueF a
+  r <- fv av
+  fromValue r
+    where
+
+-- NOTE: This is safe, but introduces logs of redundant traversals
+toValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)
+toValueF = pure . fromFO . hoistValue (pure . runIdentity) . toFO . toValue
+  where
+    toFO :: forall f . Value f -> FirstOrderValue f
+    toFO = go
+      where
+        go (VLamF t ()) = error "Please do not write (ToValue (a -> b))"
+        go (VInt x) = VInt x
+        go (VDbl x) = VDbl x
+        go (VBool x) = VBool x
+        go (VChar x) = VChar x
+        {- go (VList x) = (go <$> VList x) -}
+        {- go (VRecord x) = (goT <$> VRecord x) -}
+
+        goT = undefined
+
+    fromFO :: forall f . FirstOrderValue f -> Value f
+    fromFO = error "FIXME"
+
+
+-- FIXME
+{- instance forall a b f. (ToValue a, FromValue b, Applicative f, MonadEval f) => FromValue (a -> f b) where -}
+    {- fromValue (VLam f) = pure  $ \x -> do -}
+
+
+      {- f undefined -}
+      {- undefined -}
+
+      {- {- x' :: FirstOrderValue f <- toValueF x -} -}
+      {- {- xx <- f (foo $ fromFO x') -} -}
+      {- {- r :: b <- f undefined -} -}
+      {- {- (fromValue undefined) :: f b -} -}
+        {- -- TODO for now we always run in the pure evaluation monad (which is -}
+        {- -- hardcoded in the Value type). -}
+        {- -- -}
+        {- -- This natural transformation lifts the evaluator into the user-providec -}
+        {- -- evaluator. In theory we could parameterize (Exp, Value, Type) etc -}
+        {- -- on some effect algebra and provide the interpreter function here. -}
+        {- {- liftEval = id -- either throwError pure . runEvalM' -} -}
+
+    {- fromValue v           = failfromValue "VLam" v -}
 
 
 --
@@ -1100,8 +1143,6 @@ instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
 {- fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue -}
 
 
-toValueF :: Applicative f => ToValue a => a -> Value f
-toValueF = hoistValue (pure . runIdentity) . toValue
 
 
 instance HasType a => HasType [a] where
