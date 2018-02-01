@@ -106,6 +106,7 @@ import Data.Traversable
 #endif
 
 
+
 {- import Debug.Trace -}
 
 -- |
@@ -119,7 +120,16 @@ deriving instance Applicative EvalM
 deriving instance Monad EvalM
 deriving instance MonadError String EvalM
 
+-- (T -> T) -> T
 newtype Thunk qq = Thunk { force_ :: qq (Value qq) }
+
+type f ~> g = forall x . f x -> g x
+
+hoistThunk :: Functor f => (f ~> g) -> Thunk f -> Thunk g
+hoistThunk f (Thunk t) = Thunk (f . fmap (hoistValue f) $ t)
+
+hoistValue :: (f ~> g) -> Value f -> Value g
+hoistValue = undefined
 
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
@@ -1057,21 +1067,29 @@ instance (HasType a, HasType b) => HasType (a -> f b) where
     typeOf p = _TFun (typeOf $ dom p) (typeOf $ inside $ inside p)
 
 -- FIXME
-{- instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where -}
-    {- fromValue (VLam f) = pure  $ \x -> liftEval $ do -}
-      {- x' <- mkThunk' $ pure $ toValue x -}
+instance (ToValue a, FromValue b, MonadEval f) => FromValue (a -> f b) where
+    fromValue (VLam f) = pure  $ \x -> undefined f x
+      {- x' <- delay $ _ $ toValue x -}
       {- r <- f x' -}
       {- fromValue r -}
-      {- where -}
-        {- -- TODO for now we always run in the pure evaluation monad (which is -}
-        {- -- hardcoded in the Value type). -}
-        {- -- -}
-        {- -- This natural transformation lifts the evaluator into the user-providec -}
-        {- -- evaluator. In theory we could parameterize (Exp, Value, Type) etc -}
-        {- -- on some effect algebra and provide the interpreter function here. -}
-        {- {- liftEval = id -- either throwError pure . runEvalM' -} -}
+      where
+        -- TODO for now we always run in the pure evaluation monad (which is
+        -- hardcoded in the Value type).
+        --
+        -- This natural transformation lifts the evaluator into the user-providec
+        -- evaluator. In theory we could parameterize (Exp, Value, Type) etc
+        -- on some effect algebra and provide the interpreter function here.
+        {- liftEval = id -- either throwError pure . runEvalM' -}
 
-    {- fromValue v           = failfromValue "VLam" v -}
+    fromValue v           = failfromValue "VLam" v
+
+
+--
+--
+--  (Thunk f1 -> f1 (Value f1)) -> a -> f b
+
+
+
 
 {- fv2 :: (MonadEval m, FromValue b, ToValue a) => -}
      {- Value qq -> a -> m b -}
@@ -1082,6 +1100,8 @@ instance (HasType a, HasType b) => HasType (a -> f b) where
 {- fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue -}
 
 
+toValueF :: Applicative f => ToValue a => a -> Value f
+toValueF = hoistValue (pure . runIdentity) . toValue
 
 
 instance HasType a => HasType [a] where
