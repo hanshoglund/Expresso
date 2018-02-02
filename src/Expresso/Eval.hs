@@ -46,7 +46,7 @@ module Expresso.Eval(
   , Env
   , Env'
   , EvalM
-  , runEvalM'
+  , runEvalM
   , runEvalIO
   , ValueF(..)
   , ThunkF(..)
@@ -139,10 +139,10 @@ instance MonadEval EvalM where
   trace msg = toValue <$> pure ()
 
 runEvalIO :: EvalM a -> IO a
-runEvalIO = either error pure . runEvalM'
+runEvalIO = either error pure . runEvalM
 
-runEvalM' :: EvalM a -> Either String a
-runEvalM' = runIdentity . runExceptT . runEvalT
+runEvalM :: EvalM a -> Either String a
+runEvalM = runIdentity . runExceptT . runEvalT
 
 type Value' = Value EvalM
 type Thunk' = Thunk EvalM
@@ -212,7 +212,7 @@ data ValueF hof qq
 instance Show Value' where
   -- TODO this doesn't just work for EvalM, but for any f where we have
   --  f ~> Either String
-  show = showR . runEvalM' . ppValue'
+  show = showR . runEvalM . ppValue'
 
 
 -- | This does *not* evaluate deeply
@@ -728,7 +728,7 @@ renderADTValue (ADT outer)
   = foldOrSingle
     -- TODO clean up this error printing...
     id (\k v r -> error $ "unexpected variant with >1 element"
-          -- <> show (k,runEvalM'.ppValue' $ g v,runEvalM'.ppValue' $ r)
+          -- <> show (k,runEvalM.ppValue' $ g v,runEvalM.ppValue' $ r)
           ) (error "absurd!")
     (\k v -> VVariant k $ valueToThunk $ g v)
     outer
@@ -834,7 +834,7 @@ renderADParser x = evalState (go x) 0
                 v <- force th
                 runParser p v
               _ -> fail k m
-            _ -> throwError $ "Not a record" -- FIXME, wanted '"<> k <>"', got (" <> (showR $ runEvalM' $ ppValue' x) <> ")"
+            _ -> throwError $ "Not a record" -- FIXME, wanted '"<> k <>"', got (" <> (showR $ runEvalM $ ppValue' x) <> ")"
       where
         fail k m = throwError $ "Bad record" -- FIXME , wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
 
@@ -1100,7 +1100,7 @@ newtype Unsafe a b = Unsafe { runUnsafe :: a -> b }
 
 instance FromValue1 Unsafe where
   type Arr Unsafe = EvalM
-  fv x = Unsafe $ either error id . runEvalM' <$> fromValue1 x
+  fv x = Unsafe $ either error id . runEvalM <$> fromValue1 x
 
 
 fromValue1 :: (ToValue a, FromValue r, MonadEval f) => Value f -> a -> f r
@@ -1138,7 +1138,7 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
     -- TODO this shoult be a N.T. from a free MonadEval to f.
     -- (EvalM is not quite that yet, but close!)
     nt :: EvalM ~> f
-    nt = either throwError pure . runEvalM'
+    nt = either throwError pure . runEvalM
 
     toFO :: forall f . Functor f => Value f -> FirstOrderValue f
     toFO = go
@@ -1314,14 +1314,14 @@ instance (FromValue a, FromValue b, FromValue c) => FromValue (Choice3 a b c)
 -- TODO test
 roundTrip :: (ToValue a, FromValue a) => a -> Either String a
 roundTrip = undefined
-{- roundTrip = runEvalM' . fromValue . pureM . toValue -}
+{- roundTrip = runEvalM . fromValue . pureM . toValue -}
   {- where -}
     {- pureM = pure . runIdentity -}
 
 
 -- FIXME debug
 {- traceV :: Value -> Value -}
-{- traceV x = trace (showR . runEvalM' $ ppValue' x) x -}
+{- traceV x = trace (showR . runEvalM $ ppValue' x) x -}
 showR (Right x) = show x
 showR (Left e) = "<<Error:" <> show e <> ">>"
 
