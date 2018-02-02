@@ -135,16 +135,19 @@ type f ~> g = forall x . f x -> g x
 hoistThunk :: Functor f => (f ~> g) -> ThunkF Void f -> ThunkF Void g
 hoistThunk f (Thunk t) = Thunk (f . fmap (hoistValue f) $ t)
 
-hoistValue :: (f ~> g) -> FirstOrderValue f -> FirstOrderValue g
+hoistValue :: Functor f => (f ~> g) -> FirstOrderValue f -> FirstOrderValue g
 hoistValue f = go
   where
     go (VLamF _ x) = absurd x
     go (VInt x) = VInt x
     go (VDbl x) = VDbl x
     go (VChar x) = VChar x
+    go (VBool x) = VBool x
+    go (VList xs) = VList (go <$> xs)
+    go (VRecord xs) = VRecord (goT <$> xs)
+    go (VVariant l t) = VVariant l (goT t)
 
-
-
+    goT = hoistThunk f
 
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
@@ -153,7 +156,7 @@ class ApplicativeMonadError String f => MonadEval f where
   force    :: Thunk f -> f (Value f)
   delay    :: f (Value f) -> f (Thunk f)
   evalRef  :: String -> f (Value f)
-
+  trace    :: String -> f (Value f)
 instance Alternative EvalM where
   EvalM a <|> EvalM b = EvalM (a <|> b)
   empty = EvalM empty
@@ -161,6 +164,7 @@ instance MonadEval EvalM where
   force = force_
   delay = return . Thunk
   evalRef _ = pure $ VRecord mempty
+  trace msg = toValue' <$> pure ()
 
 mkThunk :: (MonadEval f) => f (Value f) -> f (Thunk f)
 mkThunk = delay
@@ -221,7 +225,7 @@ instance Show Value' where
 
 -- | This does *not* evaluate deeply
 ppValue :: Value qq -> Doc
-ppValue (VLam  _)   = "<Lambda>"
+ppValue VLamF{}     = "<Lambda>"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
 ppValue (VBool b)   = if b then "True" else "False"
@@ -285,7 +289,7 @@ eval env e = cata alg e env
         env' <- bind env b t
         e2 env'
     alg (ERef x _ :*: pos)     _   = evalRef x
-    alg (EPrim p :*: K pos)    _   = return $ evalPrim pos p
+    alg (EPrim p :*: K pos)    _   = pure $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
 evalLam :: MonadEval qq => Env qq -> Bind Name -> (Env qq -> qq (Value qq)) -> qq (Value qq)
@@ -298,8 +302,19 @@ evalApp pos fv         _  =
     throwError $ show pos ++ " : Expected a function, but got: " ++
                  show (ppValue fv)
 
+-- | Look up a primitive.
+--
+-- Note: return type is not in qq, but the value returned may still be a function with
+-- effects in qq (e.g. a VLam).
 evalPrim :: forall qq . MonadEval qq => Pos -> Prim -> Value qq
 evalPrim pos p = case p of
+    Trace     -> VLam $ \s -> do
+        msg <- fromValue' s
+        trace msg
+    ErrorPrim     -> VLam $ \s -> do
+        msg <- fromValue' s
+        throwError $ "error (" ++ show pos ++ "):" ++ msg
+
     Int i         -> VInt i
     Dbl d         -> VDbl d
     Bool b        -> VBool b
@@ -308,10 +323,9 @@ evalPrim pos p = case p of
     Show          -> mkStrictLam $ \v -> string . show <$> ppValue' v
       where
         string = VList . fmap VChar
-    ErrorPrim     -> VLam $ \s -> do
-        msg <- fromValue' s
-        throwError $ "error (" ++ show pos ++ "):" ++ msg
 
+
+    Abs -> mkStrictLam  $ numOp1 pos abs
     ArithPrim Add -> mkStrictLam2 $ numOp pos (+)
     ArithPrim Sub -> mkStrictLam2 $ numOp pos (-)
     ArithPrim Mul -> mkStrictLam2 $ numOp pos (*)
@@ -423,7 +437,7 @@ evalPrim pos p = case p of
             v -> throwError $ show pos ++ " : Expected a variant, but got: " ++
                               show (ppValue v)
     Absurd -> VLam $ \v -> force v >> throwError "The impossible happened!"
-    p -> error $ show pos ++ " : Unsupported Prim: " ++ show p
+    {- p -> error $ show pos ++ " : Unsupported Prim: " ++ show p -}
 
 
 -- non-strict bind
@@ -467,6 +481,10 @@ numOp :: MonadEval f => Pos -> (forall a. Num a => a -> a -> a) -> Value f -> Va
 numOp _ op (VInt x) (VInt y) = return $ VInt $ x `op` y
 numOp _ op (VDbl x) (VDbl y) = return $ VDbl $ x `op` y
 numOp p _  v1       v2       = failOnValues p [v1, v2]
+
+numOp1 :: MonadEval f => Pos -> (forall a. Num a => a -> a) -> Value f -> f (Value f)
+numOp1 _ op (VInt x) = return $ VInt $ op x
+numOp1 p _  v1       = failOnValues p [v1]
 
 -- NB: evaluates deeply
 equalValues :: MonadEval f => Pos -> Value f -> Value f -> f Bool
@@ -1098,61 +1116,7 @@ fromValue1 (VLam fv) a = do
   av <- mkThunk' . pure =<< toValueF a
   r <- fv av
   fromValue r
-    where
-
-type Value' = Value EvalM
-toValue' :: ToValue a => a -> Value'
-toValue' = either (error . ("toValue: unexpected: " ++)) id . runEvalM' . toValueF
-
--- NOTE: This is safe, but introduces logs of redundant traversals
-toValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)
-toValueF = pure . fromFO . hoistValue (pure . runIdentity) . toFO . toValue
-  where
-    toFO :: forall f . Value f -> FirstOrderValue f
-    toFO = go
-      where
-        go (VLamF t ()) = error "Please do not write (ToValue (a -> b))"
-        go (VInt x) = VInt x
-        go (VDbl x) = VDbl x
-        go (VBool x) = VBool x
-        go (VChar x) = VChar x
-        {- go (VList x) = (go <$> VList x) -}
-        {- go (VRecord x) = (goT <$> VRecord x) -}
-
-        goT = undefined
-
-    fromFO :: forall f . FirstOrderValue f -> Value f
-    fromFO = error "FIXME"
-
-
--- FIXME
-{- instance forall a b f. (ToValue a, FromValue b, Applicative f, MonadEval f) => FromValue (a -> f b) where -}
-    {- fromValue (VLam f) = pure  $ \x -> do -}
-
-
-      {- f undefined -}
-      {- undefined -}
-
-      {- {- x' :: FirstOrderValue f <- toValueF x -} -}
-      {- {- xx <- f (foo $ fromFO x') -} -}
-      {- {- r :: b <- f undefined -} -}
-      {- {- (fromValue undefined) :: f b -} -}
-        {- -- TODO for now we always run in the pure evaluation monad (which is -}
-        {- -- hardcoded in the Value type). -}
-        {- -- -}
-        {- -- This natural transformation lifts the evaluator into the user-providec -}
-        {- -- evaluator. In theory we could parameterize (Exp, Value, Type) etc -}
-        {- -- on some effect algebra and provide the interpreter function here. -}
-        {- {- liftEval = id -- either throwError pure . runEvalM' -} -}
-
-    {- fromValue v           = failfromValue "VLam" v -}
-
-
---
---
---  (Thunk f1 -> f1 (Value f1)) -> a -> f b
-
-
+fromValue1 v _ = throwError $ "fromValue1: Expected a lambda expression"
 
 
 {- fv2 :: (MonadEval m, FromValue b, ToValue a) => -}
@@ -1162,6 +1126,52 @@ toValueF = pure . fromFO . hoistValue (pure . runIdentity) . toFO . toValue
 {- fv3 :: (MonadEval m, FromValue r, ToValue a, ToValue b) => -}
      {- Value qq -> a -> b -> m r -}
 {- fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue -}
+
+
+
+type Value' = Value EvalM
+
+-- TODO when is this safe? always?
+--
+-- Can we make it more safe by moving the hoist mechanism into the G classes (and make this the
+-- official method).
+toValue' :: ToValue a => a -> Value'
+toValue' = either (error . ("toValue: unexpected: " ++)) id . runEvalM' . toValueF
+
+-- NOTE: This is safe, but introduces logs of redundant traversals
+toValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)
+toValueF = pure . fromFO . hoistValue (pure . runIdentity) . toFO . toValue
+  where
+    toFO :: forall f . Functor f => Value f -> FirstOrderValue f
+    toFO = go
+      where
+        go (VLamF t ()) = error "Please do not write (ToValue (a -> b))"
+        go (VInt x) = VInt x
+        go (VDbl x) = VDbl x
+        go (VBool x) = VBool x
+        go (VChar x) = VChar x
+        go (VList x) = VList (go <$> x)
+        go (VRecord x) = VRecord (goT <$> x)
+        go (VVariant l x) = VVariant l (goT x)
+
+        goT (Thunk f) = Thunk (go <$> f)
+
+    fromFO :: forall f . Functor f => FirstOrderValue f -> Value f
+    fromFO = go
+      where
+        go (VLamF t x) = absurd x
+        go (VInt x) = VInt x
+        go (VDbl x) = VDbl x
+        go (VBool x) = VBool x
+        go (VChar x) = VChar x
+        go (VList x) = VList (go <$> x)
+        go (VRecord x) = VRecord (goT <$> x)
+        go (VVariant l x) = VVariant l (goT x)
+
+        goT (Thunk f) = Thunk (go <$> f)
+
+
+
 
 
 
