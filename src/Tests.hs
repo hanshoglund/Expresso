@@ -360,8 +360,11 @@ foreignTypeTests = testGroup
   -- No: This complicates the representation of things isomorphic to (), (a,b) etc
   -- Tagging can easily be provided by overriding HasType anyway
   , hasType (xx :: Proxy (ANewType)) "Int"
-
-  {- , hasType (xx :: Proxy ((Int -> Void) -> Double)) "(Int -> <>) -> Double" -}
+  , hasType (xx :: Proxy (Int -> EvalM Int)) "Int -> Int"
+  , hasType (xx :: Proxy (Int -> EvalM (Int, Bool)))
+      "Int -> {_1 : Int, _2 : Bool}"
+  , hasType (xx :: Proxy ((), Int -> EvalM Int, String -> EvalM Bool))
+      "{_1 : {}, _2 : Int -> Int, _3 : [Char] -> Bool}"
   ]
 
 foreignImportTests = testGroup
@@ -385,12 +388,9 @@ foreignExportTests = testGroup
   , hasValue "{}" ()
   , hasValue "Just 2" (Just (2 :: Int))
 
-
-  -- Mono id function
   , hasValueF "x -> x" (2 :: Int) (2 :: Int)
   , hasValueF2 "x y -> x" (2 :: Int) (3 :: Int) (2 :: Int)
   , hasValueF2 "x y -> y" (2 :: Int) (3 :: Int) (3 :: Int)
-  {- , hasValueF "x -> y -> z" (2 :: Int) (2 :: Int) -}
   ]
 
 xx :: Proxy a

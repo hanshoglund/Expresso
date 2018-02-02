@@ -77,6 +77,7 @@ import Control.Monad.Except hiding (mapM)
 import Control.Monad.State hiding (mapM)
 import Control.Monad.Reader hiding (mapM)
 import Control.Applicative
+import Control.Arrow (Kleisli(..))
 import Data.Bifunctor (first)
 import Data.Functor.Compose
 import Data.Foldable (foldrM, toList)
@@ -1093,6 +1094,21 @@ instance HasType Char where
 
 instance (HasType a, HasType b) => HasType (a -> f b) where
     typeOf p = _TFun (typeOf $ dom p) (typeOf $ inside $ inside p)
+
+class MonadEval (Arr f) => FromValue1 (f :: * -> * -> *) where
+  type Arr f :: * -> *
+  fv :: (FromValue b, ToValue a) => Value (Arr f) -> f a b
+
+instance MonadEval f => FromValue1 (Kleisli f) where
+  type Arr (Kleisli f) = f
+  fv x = Kleisli $ fromValue1 x
+
+
+newtype Unsafe a b = Unsafe { runUnsafe :: a -> b }
+
+instance FromValue1 Unsafe where
+  type Arr Unsafe = EvalM
+  fv x = Unsafe $ either error id . runEvalM' <$> fromValue1 x
 
 
 fromValue1 :: (ToValue a, FromValue r, MonadEval f) => Value f -> a -> f r
