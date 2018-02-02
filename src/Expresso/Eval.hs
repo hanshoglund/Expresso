@@ -140,6 +140,10 @@ instance MonadEval EvalM where
 runEvalIO :: EvalM a -> IO a
 runEvalIO = either error pure . runEvalM'
 
+runEvalM' :: EvalM a -> Either String a
+runEvalM' = runIdentity . runExceptT . runEvalT
+
+type Value' = Value EvalM
 
 type Thunk = ThunkF ()
 newtype ThunkF hof qq = Thunk { force_ :: qq (ValueF hof qq) }
@@ -252,8 +256,6 @@ extractChar (VChar c) = Just c
 extractChar _ = Nothing
 
 
-runEvalM' :: EvalM a -> Either String a
-runEvalM' = runIdentity . runExceptT . runEvalT
 
 
 eval :: forall qq . MonadEval qq => Env qq -> Exp -> qq (Value qq)
@@ -900,25 +902,12 @@ initial = ADT mempty
 terminal :: ADT a
 terminal = ADT (Map.singleton "()" $ mempty)
 
--- FIXME test
-at1 =  ppType $ renderADT $ improveADT $
-  (constructor "Foo"
-    (selector "a" (singleton _TInt) `prod` selector "b" (singleton (_TList _TInt))))
-  `coprod`
-  (constructor "B" $ singleton _TInt)
--- FIXME test
-at2 = runEvalM' $ ppValue' $ renderADTValue $ improveADT $
-  (constructor "Foo"
-    (selector "a" (singleton $ VInt 2) `prod` selector "b" (singleton (VList [VInt 33]))))
-  {- (constructor "B" $ singleton $ VRecord mempty) -}
 
-
-{- pattern SimpleType a = Left a -}
-{- pattern AlgType a    = Right a -}
-
+-- G.1 is based on embedding Hask in the functor category [Hask,Hask]
+-- These synonyms make it a bit more clear what's going on
 pattern Id a = G.M1 a
-runId = G.unM1
-runConst = G.unK1
+runId        = G.unM1
+runConst     = G.unK1
 
 -- TODO remove Either in return type of gtypeOf if Left is not used...
 -- TODO move
@@ -1127,17 +1116,8 @@ fromValue2 (VLam fv) a b = do
   fromValue1 r b
 fromValue2 v _ _ = throwError $ "fromValue1: Expected a lambda expression"
 
-{- fv2 :: (MonadEval m, FromValue b, ToValue a) => -}
-     {- Value qq -> a -> m b -}
-{- fv2 = (\f a b -> (f a >>= ($ b))) fromValue -}
-
-{- fv3 :: (MonadEval m, FromValue r, ToValue a, ToValue b) => -}
-     {- Value qq -> a -> b -> m r -}
-{- fv3 = (\f a b c -> (f a >>= ($ b) >>= ($ c))) fromValue -}
 
 
-
-type Value' = Value EvalM
 
 -- TODO remove
 toValue' :: ToValue a => a -> Value'
