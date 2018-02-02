@@ -43,14 +43,17 @@ module Expresso.Eval(
   , ppValue
   , ppValue'
 
+  , Env
+  , Env'
+  , EvalM
   , runEvalM'
   , runEvalIO
-  , Env
-  , EvalM
   , ValueF(..)
   , ThunkF(..)
   , Value
   , Thunk
+  , Value'
+  , Thunk'
 
 {- , force -}
 
@@ -59,7 +62,6 @@ module Expresso.Eval(
   , fromValue1
   , fromValue2
   , ToValue(..)
-  , Value'
   , toValue' -- TODO flip conventions, make this part of ToValue class with default...
   , MonadEval(..)
 
@@ -144,6 +146,8 @@ runEvalM' :: EvalM a -> Either String a
 runEvalM' = runIdentity . runExceptT . runEvalT
 
 type Value' = Value EvalM
+type Thunk' = Thunk EvalM
+type Env'   = Env   EvalM
 
 type Thunk = ThunkF ()
 newtype ThunkF hof qq = Thunk { force_ :: qq (ValueF hof qq) }

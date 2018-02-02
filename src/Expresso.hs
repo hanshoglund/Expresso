@@ -31,7 +31,7 @@ import Control.Monad.Except (ExceptT(..), runExceptT, throwError)
 import Data.Monoid
 import Control.Applicative
 
-import Expresso.Eval (Env, EvalM, FromValue(..), ValueF(..), Value)
+import Expresso.Eval (Env, EvalM, FromValue(..), ValueF(..), Value, Value')
 import Expresso.TypeCheck (TIState, initTIState)
 import Expresso.Pretty (render)
 import Expresso.Syntax
@@ -42,8 +42,7 @@ import qualified Expresso.TypeCheck as TypeCheck
 import qualified Expresso.Parser as Parser
 
 
-runEvalM :: EvalM a -> IO (Either String a)
-runEvalM = pure . Eval.runEvalM'
+runEvalE = ExceptT . pure . Eval.runEvalM'
 
 
 typeOfWithEnv :: TypeEnv -> TIState -> ExpI -> IO (Either String Type)
@@ -59,7 +58,7 @@ typeOfString str = runExceptT $ do
     top <- ExceptT $ return $ Parser.parse "<unknown>" str
     ExceptT $ typeOf top
 
-type Val = Value EvalM
+type Val = Value'
 type Envi = Env EvalM
 
 evalWithEnv
@@ -69,7 +68,7 @@ evalWithEnv
     -> IO (Either String a)
 evalWithEnv env expr = runExceptT $ do
   v <- ExceptT $ evalWithEnv' env expr
-  ExceptT $ runEvalM $ Eval.fromValue v
+  runEvalE $ Eval.fromValue v
 
 evalWithEnv'
     :: (TypeEnv, TIState, Envi)
@@ -78,7 +77,7 @@ evalWithEnv'
 evalWithEnv' (tEnv, tState, env) ei = runExceptT $ do
   e      <- Parser.resolveImports ei
   _sigma <- ExceptT . return $ inferTypes tEnv tState e
-  ExceptT $ runEvalM . (Eval.eval env {- >=> Eval.fromValue-}) $ e
+  runEvalE . (Eval.eval env {- >=> Eval.fromValue-}) $ e
 
 
 eval :: FromValue a => ExpI -> IO (Either String a)
@@ -118,12 +117,9 @@ bind (tEnv, tState, env) b ei = do
         case res'e of
             Left err    -> error err
             Right tEnv' -> do
-                thunk <- runEvalIO $ Eval.delay $ Eval.eval env e
-                env'  <- runEvalIO $ Eval.bind env b thunk
+                thunk <- Eval.runEvalIO $ Eval.delay $ Eval.eval env e
+                env'  <- Eval.runEvalIO $ Eval.bind env b thunk
                 return (tEnv', tState', env')
-  where
-    runEvalIO :: EvalM a -> IO a
-    runEvalIO = either error pure . Eval.runEvalM'
 
 inferTypes :: TypeEnv -> TIState -> Exp -> Either String Type
 inferTypes tEnv tState e =
@@ -138,4 +134,4 @@ showValue = render . Eval.ppValue
 
 -- | This evaluates deeply
 showValue' :: Val -> IO String
-showValue' v = either id render <$> (runEvalM $ Eval.ppValue' v)
+showValue' v = render <$> (Eval.runEvalIO $ Eval.ppValue' v)
