@@ -56,6 +56,8 @@ module Expresso.Eval(
 
   , HasType(..)
   , FromValue(..)
+  , fromValue1
+  , fromValue2
   , ToValue(..)
   , Value'
   , toValue' -- TODO flip conventions, make this part of ToValue class with default...
@@ -1093,7 +1095,7 @@ instance (HasType a, HasType b) => HasType (a -> f b) where
     typeOf p = _TFun (typeOf $ dom p) (typeOf $ inside $ inside p)
 
 
-fromValue1 :: (ToValue a, FromValue b, MonadEval f) => Value f -> a -> f b
+fromValue1 :: (ToValue a, FromValue r, MonadEval f) => Value f -> a -> f r
 fromValue1 (VLam fv) a = do
   -- NOTE: unsafeToValueF here is safe, as long we know that a is not on the form (_ -> _).
   av <- delay . pure =<< unsafeToValueF a
@@ -1101,6 +1103,13 @@ fromValue1 (VLam fv) a = do
   fromValue r
 fromValue1 v _ = throwError $ "fromValue1: Expected a lambda expression"
 
+
+fromValue2 :: (ToValue a, ToValue b, FromValue r, MonadEval f) => Value f -> a -> b -> f r
+fromValue2 (VLam fv) a b = do
+  av <- (delay . pure) =<< unsafeToValueF a
+  r <- fv av
+  fromValue1 r b
+fromValue2 v _ _ = throwError $ "fromValue1: Expected a lambda expression"
 
 {- fv2 :: (MonadEval m, FromValue b, ToValue a) => -}
      {- Value qq -> a -> m b -}

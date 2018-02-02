@@ -387,7 +387,9 @@ foreignExportTests = testGroup
 
 
   -- Mono id function
-  {- , hasValueF "x -> x" (2 :: Int) (2 :: Int) -}
+  , hasValueF "x -> x" (2 :: Int) (2 :: Int)
+  , hasValueF2 "x y -> x" (2 :: Int) (3 :: Int) (2 :: Int)
+  , hasValueF2 "x y -> y" (2 :: Int) (3 :: Int) (3 :: Int)
   {- , hasValueF "x -> y -> z" (2 :: Int) (2 :: Int) -}
   ]
 
@@ -425,12 +427,24 @@ hasValue str = hasValue' str pure
 
 -- | Test that a given Expresso expression evalutates to a function, which when applied
 -- to the given value returns the given result.
-hasValueF :: (Eq b, Show b, FromValue (a -> EvalM b)) => String -> a -> b -> TestTree
-hasValueF str arg = hasValue' str ($ arg)
+hasValueF :: (Eq r, Show r, FromValue r, ToValue a) => String -> a -> r -> TestTree
+hasValueF str a expected = testCase str $ do
+  result <- evalString' str
+  case result of
+    Left err -> assertFailure err
+    Right f -> do
+      actual  <- runEvalIO $ fromValue1 f a
+      assertEqual "" expected actual
 
-hasValueF1 str a = hasValue' str (\f -> f a)
-hasValueF2 str a b = hasValue' str (\f -> f a >>= ($ b))
-hasValueF3 str a b c = hasValue' str (\f -> f a >>= ($ b) >>= ($ c))
+hasValueF2 :: (Eq r, Show r, FromValue r, ToValue a, ToValue b) => String -> a -> b -> r -> TestTree
+hasValueF2 str a b expected = testCase str $ do
+  result <- evalString' str
+  case result of
+    Left err -> assertFailure err
+    Right f -> do
+      actual  <- runEvalIO $ fromValue2 f a b
+      assertEqual "" expected actual
+
 
 hasValue' :: (Eq b, Show b, FromValue a) => String -> (a -> EvalM b) -> b -> TestTree
 hasValue' str f expected = testCase str $ do
