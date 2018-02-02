@@ -555,8 +555,8 @@ class HasType a where
 -- fromValue . toValue = pure
 -- @
 class HasType a => ToValue a where
-    toValue :: ToValue a => a -> Value Identity
-    default toValue :: (G.Generic a, GToValue (G.Rep a)) => a -> Value Identity
+    toValue :: ToValue a => a -> Value'
+    default toValue :: (G.Generic a, GToValue (G.Rep a)) => a -> Value'
     toValue = renderADTValue . improveADT . gtoValue defaultOptions . G.from
 
 -- | Haskell types whose values can be represented by Expresso values.
@@ -568,7 +568,7 @@ class HasType a => FromValue a where
 class GHasType f where
     gtypeOf :: Options -> Proxy (f x) -> Either Type (ADT Type)
 class GHasType f => GToValue f where
-    gtoValue :: Options -> f x -> ADT (Value Identity)
+    gtoValue :: Options -> f x -> ADT Value'
 class GHasType f => GFromValue f where
     type ADFor f :: C
     gfromValue :: MonadEval g => Options -> Proxy (f x) -> AD (ADFor f) (Parser g g) (f x)
@@ -1095,7 +1095,8 @@ instance (HasType a, HasType b) => HasType (a -> f b) where
 
 fromValue1 :: (ToValue a, FromValue b, MonadEval f) => Value f -> a -> f b
 fromValue1 (VLam fv) a = do
-  av <- delay . pure =<< toValueF a
+  -- NOTE: unsafeToValueF here is safe, as long we know that a is not on the form (_ -> _).
+  av <- delay . pure =<< unsafeToValueF a
   r <- fv av
   fromValue r
 fromValue1 v _ = throwError $ "fromValue1: Expected a lambda expression"
@@ -1113,16 +1114,18 @@ fromValue1 v _ = throwError $ "fromValue1: Expected a lambda expression"
 
 type Value' = Value EvalM
 
--- TODO when is this safe? always?
---
--- Can we make it more safe by moving the hoist mechanism into the G classes (and make this the
--- official method).
+-- TODO remove
 toValue' :: ToValue a => a -> Value'
-toValue' = either (error . ("toValue: unexpected: " ++)) id . runEvalM' . toValueF
+toValue' =  toValue
 
 -- NOTE: This is safe, but introduces logs of redundant traversals
-toValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)
-toValueF = pure . fromFO . hoistValue (pure . runIdentity) . toFO . toValue
+unsafeToValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)
+-- FIXME, replace the thing in hoist with something that provides a NT
+--  EvalM ~> f a, constraining f to MonadEval
+--
+-- If we replace the use of EvalM on Value' with something that's truly a free MonadEval,
+-- we can do this even better!
+unsafeToValueF = pure . fromFO . hoistValue (pure . either error id . runEvalM') . toFO . toValue
   where
     toFO :: forall f . Functor f => Value f -> FirstOrderValue f
     toFO = go
