@@ -62,7 +62,6 @@ module Expresso.Eval(
   , fromValue1
   , fromValue2
   , ToValue(..)
-  , toValue' -- TODO flip conventions, make this part of ToValue class with default...
   , MonadEval(..)
 
   -- TODO testing
@@ -137,7 +136,7 @@ instance MonadEval EvalM where
   force = force_
   delay = return . Thunk
   evalRef _ = pure $ VRecord mempty
-  trace msg = toValue' <$> pure ()
+  trace msg = toValue <$> pure ()
 
 runEvalIO :: EvalM a -> IO a
 runEvalIO = either error pure . runEvalM'
@@ -1123,12 +1122,7 @@ fromValue2 v _ _ = throwError $ "fromValue1: Expected a lambda expression"
 
 
 
--- TODO remove
-toValue' :: ToValue a => a -> Value'
-toValue' =  toValue
-
-
--- | Like 'toValue', but interpret into an arbitrary Functor.
+-- | Like 'toValue, but interpret into an arbitrary Functor.
 --
 -- This is only defined for non-function types, as generally there is
 -- generally no way to hoist a Value with lambdas. E.g. this can

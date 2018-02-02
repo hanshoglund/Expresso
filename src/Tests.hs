@@ -416,7 +416,7 @@ isValue :: ToValue a => String -> a -> TestTree
 isValue expected hsVal = testCase caseStr $
   assertEqual "" expected actual
   where
-    actual = show $ toValue' hsVal
+    actual = show $ toValue hsVal
     caseStr = expected
 
 
