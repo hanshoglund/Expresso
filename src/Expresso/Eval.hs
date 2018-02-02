@@ -27,6 +27,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
+
 #if __GLASGOW_HASKELL__ <= 708
 {-# LANGUAGE OverlappingInstances #-}
 #endif
@@ -44,16 +45,21 @@ module Expresso.Eval(
   , ppValue'
 
   , Env
-  , Env'
   , EvalM
+  , EvalIO
   , runEvalM
   , runEvalIO
+  , runEvIO'
   , ValueF(..)
   , ThunkF(..)
   , Value
   , Thunk
+  , Env'
   , Value'
   , Thunk'
+  , EnvIO
+  , ValueIO
+  , ThunkIO
 
 {- , force -}
 
@@ -108,6 +114,10 @@ import Expresso.Pretty
 import Expresso.Utils (cata, (:*:)(..), K(..))
 import qualified Expresso.Parser as Parser
 
+{- import Control.Monad.Log hiding (Trace) -}
+import Control.Monad.Var hiding (Var)
+import qualified Control.Monad.Var as Var
+
 #if __GLASGOW_HASKELL__ <= 708
 import Prelude hiding (mapM, concat, elem, and, any)
 import Data.Foldable
@@ -124,7 +134,26 @@ type Env f = HashMap Name (Thunk f)
 
 -- | Basic implementation of MonadEval, which evaluates lazily
 -- (TODO may not perform full call-by-need) and ignores most effects.
-newtype EvalM a = EvalM { runEvalT :: ExceptT String Identity a }
+{- newtype EvalM a = EvalM { runEvalT :: ExceptT String Identity a } -}
+{- deriving instance Functor EvalM -}
+{- deriving instance Applicative EvalM -}
+{- deriving instance Monad EvalM -}
+{- deriving instance MonadError String EvalM -}
+{- instance Alternative EvalM where -}
+  {- EvalM a <|> EvalM b = EvalM (a <|> b) -}
+  {- empty = EvalM empty -}
+{- instance MonadEval EvalM where -}
+  {- force = force_ -}
+  {- delay = return . Thunk -}
+  {- evalRef _ = toValue <$> pure () -}
+  {- trace msg = pure () -}
+  {- failed = throwError -}
+
+runEvalIO :: EvalIO a -> IO a
+{- runEvalIO = either error pure . runEvalM -}
+runEvalIO = runEvIO
+
+newtype EvalM a = EvalM { runEvalM_ :: ExceptT String Identity a }
 deriving instance Functor EvalM
 deriving instance Applicative EvalM
 deriving instance Monad EvalM
@@ -135,14 +164,79 @@ instance Alternative EvalM where
 instance MonadEval EvalM where
   force = force_
   delay = return . Thunk
-  evalRef _ = pure $ VRecord mempty
-  trace msg = toValue <$> pure ()
+  evalRef _ = toValue <$> pure ()
+  trace msg = pure ()
+  failed = throwError
 
-runEvalIO :: EvalM a -> IO a
-runEvalIO = either error pure . runEvalM
+runEvalM = runExcept . runEvalM_
 
-runEvalM :: EvalM a -> Either String a
-runEvalM = runIdentity . runExceptT . runEvalT
+
+
+
+
+
+class MonadTrace f where
+  trace_ :: String -> f ()
+instance MonadTrace IO where
+  trace_ = putStrLn
+
+
+-- | Run in terms of
+--
+--    MonadError String
+--    MonadVar for laziness
+--    MonadLog for trace
+newtype Ev (f :: * -> *) a = Ev { runEv_ :: ExceptT String f a }
+deriving instance MonadTrans Ev
+deriving instance (Applicative f, Monad f) => Functor (Ev f)
+deriving instance (Applicative f, Monad f) => Applicative (Ev f)
+deriving instance (Applicative f, Monad f) => Monad (Ev f)
+deriving instance (Applicative f, Monad f) => Alternative (Ev f)
+  {- Ev a <|> Ev b = Ev (a <|> b) -}
+  {- empty = Ev empty -}
+{- deriving instance MonadError String f => MonadError String (Ev f) -}
+instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (Ev f) where
+  trace x = lift $ trace_ x
+  failed x = Ev $ throwError x
+  evalRef x = error "TODO no evalRef"
+  delay k = do
+    v <- lift $ newVar Nothing
+    pure $ Thunk $ do
+      cur <- lift $ readVar v
+      case cur of
+        Just x -> pure x
+        Nothing -> do
+          r <- k
+          lift $ writeVar v $ Just r
+          pure r
+  force (Thunk k) = k
+
+runEv :: (Applicative f, Monad f, MonadError String f) => Ev f a -> f a
+runEv = either throwError pure <=< runExceptT . runEv_
+
+runEvST :: (forall s . Ev (ST s) a) -> (Either String a)
+runEvST x = runST $ runExceptT $ runEv_ x
+
+runEvIO :: Ev IO a -> IO a
+runEvIO = either error pure <=< runExceptT . runEv_
+
+runEvIO' :: Ev IO a -> ExceptT String IO a
+runEvIO' = runEv_
+
+{- runEvIO = either error pure . runEv -}
+
+{- runEv :: Ev a -> Either String a -}
+{- runEv = runIdentity . runExceptT . runEvalT -}
+
+
+
+
+
+type EvalIO = Ev IO
+
+type ValueIO = Value EvalIO
+type ThunkIO = Thunk EvalIO
+type EnvIO   = Env   EvalIO
 
 type Value' = Value EvalM
 type Thunk' = Thunk EvalM
@@ -180,11 +274,12 @@ hoistValue f = go
 -- interpretation of Expresso functions as Haskell
 -- functions.
 --
-class ApplicativeMonadError String f => MonadEval f where
+class (Applicative f, Monad f, Alternative f) => MonadEval f where
   force    :: Thunk f -> f (Value f)
   delay    :: f (Value f) -> f (Thunk f)
   evalRef  :: String -> f (Value f)
-  trace    :: String -> f (Value f)
+  trace    :: String -> f () -- TODO should be: String -> f ()
+  failed   :: String -> f a
 
 valueToThunk :: Applicative qq => Value qq -> Thunk qq
 valueToThunk = Thunk . pure
@@ -289,7 +384,7 @@ evalLam env b e = return $ VLam $ \x ->
 evalApp :: MonadEval qq => Pos -> Value qq -> Thunk qq -> qq (Value qq)
 evalApp _   (VLam f)   t  = f t
 evalApp pos fv         _  =
-    throwError $ show pos ++ " : Expected a function, but got: " ++
+    failed $ show pos ++ " : Expected a function, but got: " ++
                  show (ppValue fv)
 
 -- | Look up a primitive.
@@ -301,9 +396,10 @@ evalPrim pos p = case p of
     Trace     -> VLam $ \s -> do
         msg <- fromValue' s
         trace msg
+        pure $ VRecord mempty
     ErrorPrim     -> VLam $ \s -> do
         msg <- fromValue' s
-        throwError $ "error (" ++ show pos ++ "):" ++ msg
+        failed $ "error (" ++ show pos ++ "):" ++ msg
 
     Int i         -> VInt i
     Dbl d         -> VDbl d
@@ -414,7 +510,7 @@ evalPrim pos p = case p of
         (VRecord . HashMap.delete l) <$> (force >=> fromValueRTh) r
     RecordSelect l   -> VLam $ \r -> do
         r' <- (force >=> fromValueRTh) r
-        let err = throwError $ show pos ++ " : " ++ l ++ " not found"
+        let err = failed $ show pos ++ " : " ++ l ++ " not found"
         maybe err force (HashMap.lookup l r')
     RecordEmpty -> VRecord mempty
     VariantInject l  -> VLam $ \v ->
@@ -424,9 +520,9 @@ evalPrim pos p = case p of
         case s of
             VVariant l' t | l==l'     -> evalApp pos f t
                           | otherwise -> evalApp pos k (Thunk $ return s)
-            v -> throwError $ show pos ++ " : Expected a variant, but got: " ++
+            v -> failed $ show pos ++ " : Expected a variant, but got: " ++
                               show (ppValue v)
-    Absurd -> VLam $ \v -> force v >> throwError "The impossible happened!"
+    Absurd -> VLam $ \v -> force v >> failed "The impossible happened!"
     {- p -> error $ show pos ++ " : Unsupported Prim: " ++ show p -}
 
 
@@ -447,15 +543,15 @@ bind' env b t = do
         return $ env <> (HashMap.fromList $ zip ns vs)
     (RecWildcard, VRecord m) ->
         return $ env <> m
-    _ -> throwError $ "Cannot bind the pair: " ++ show b ++ " = " ++ show (ppValue v)
+    _ -> failed $ "Cannot bind the pair: " ++ show b ++ " = " ++ show (ppValue v)
 
 lookupValue :: MonadEval f => Env f -> Name -> f (Thunk f)
 lookupValue env n = maybe err return $ HashMap.lookup n env
   where
-    err = throwError $ "Not found: " ++ show n
+    err = failed $ "Not found: " ++ show n
 
 failOnValues :: MonadEval f => Pos -> [Value qq] -> f a
-failOnValues pos vs = throwError $ show pos ++ " : Unexpected value(s) : " ++
+failOnValues pos vs = failed $ show pos ++ " : Unexpected value(s) : " ++
                                    show (parensList (map ppValue vs))
 
 mkStrictLam :: MonadEval f => (Value f -> f (Value f)) -> Value f
@@ -814,7 +910,7 @@ renderADParser x = evalState (go x) 0
         (VVariant n th) | n == k -> do
           y <- force th
           runParser p y
-        _ -> throwError $ "Bad variant, wanted " <> k <> " got (" <> show (ppValue x) <> ")"
+        _ -> failed $ "Bad variant, wanted " <> k <> " got (" <> show (ppValue x) <> ")"
 
     go' :: forall f x a . MonadEval f => AD x (Parser f f) a -> State Int (Parser f f a)
     go' (Singleton p) = pure p
@@ -834,9 +930,9 @@ renderADParser x = evalState (go x) 0
                 v <- force th
                 runParser p v
               _ -> fail k m
-            _ -> throwError $ "Not a record" -- FIXME, wanted '"<> k <>"', got (" <> (showR $ runEvalM $ ppValue' x) <> ")"
+            _ -> failed $ "Not a record" -- FIXME, wanted '"<> k <>"', got (" <> (showR $ runEvalM $ ppValue' x) <> ")"
       where
-        fail k m = throwError $ "Bad record" -- FIXME , wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
+        fail k m = failed $ "Bad record" -- FIXME , wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
 
     go' x@Initial{} = go x
     go' x@Coprod{} = go x
@@ -1109,7 +1205,7 @@ fromValue1 (VLam fv) a = do
   av <- delay . pure =<< unsafeToValueF a
   r <- fv av
   fromValue r
-fromValue1 v _ = throwError $ "fromValue1: Expected a lambda expression"
+fromValue1 v _ = failed $ "fromValue1: Expected a lambda expression"
 
 
 fromValue2 :: (ToValue a, ToValue b, FromValue r, MonadEval f) => Value f -> a -> b -> f r
@@ -1117,7 +1213,7 @@ fromValue2 (VLam fv) a b = do
   av <- (delay . pure) =<< unsafeToValueF a
   r <- fv av
   fromValue1 r b
-fromValue2 v _ _ = throwError $ "fromValue1: Expected a lambda expression"
+fromValue2 v _ _ = failed $ "fromValue1: Expected a lambda expression"
 
 
 
@@ -1138,7 +1234,7 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
     -- TODO this shoult be a N.T. from a free MonadEval to f.
     -- (EvalM is not quite that yet, but close!)
     nt :: EvalM ~> f
-    nt = either throwError pure . runEvalM
+    nt = either failed pure . runEvalM
 
     toFO :: forall f . Functor f => Value f -> FirstOrderValue f
     toFO = go
@@ -1263,7 +1359,7 @@ instance (FromValue a, FromValue b) => FromValue (a, b)
 
 
 
-fromValueL :: MonadError String m => (Value qq -> m b) -> Value qq -> m [b]
+fromValueL :: MonadEval m => (Value qq -> m b) -> Value qq -> m [b]
 fromValueL fromValue (VList xs) = mapM fromValue xs
 fromValueL _         v          = failfromValue "VList" v
 
@@ -1273,8 +1369,8 @@ fromValueL _         v          = failfromValue "VList" v
 fromValueRTh (VRecord m) = return m
 fromValueRTh v           = failfromValue "VRecord" v
 
-failfromValue :: MonadError String f => String -> Value qq -> f a
-failfromValue desc v = throwError $ "Expected a " ++ desc ++
+failfromValue :: MonadEval f => String -> Value qq -> f a
+failfromValue desc v = failed $ "Expected a " ++ desc ++
     ", but got: " ++ show (ppValue v)
 
 

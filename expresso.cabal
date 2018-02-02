@@ -10,30 +10,30 @@ Synopsis:        A simple expressions language based on row types
 Build-Type:      Simple
 
 Library
-  Hs-Source-Dirs:  src
-  Build-Depends:   base, containers, hashable, mtl, mtl-compat, void, transformers, parsec, ansi-wl-pprint,
-                   unordered-containers, haskeline, directory, filepath, bytestring, text
-  Exposed-Modules: Expresso
-  Other-Modules:   Expresso.Parser
-                   Expresso.Eval
-                   Expresso.Type
-                   Expresso.TypeCheck
-                   Expresso.Syntax
-                   Expresso.Pretty
-                   Expresso.Utils
+  -- Hs-Source-Dirs:  src
+  -- Build-Depends:   base, containers, hashable, mtl, mtl-compat, void, transformers, parsec, ansi-wl-pprint,
+                   -- unordered-containers, haskeline, directory, filepath, bytestring, text
+  -- Exposed-Modules: Expresso
+  -- Other-Modules:   Expresso.Parser
+                   -- Expresso.Eval
+                   -- Expresso.Type
+                   -- Expresso.TypeCheck
+                   -- Expresso.Syntax
+                   -- Expresso.Pretty
+                   -- Expresso.Utils
 
-  ghc-options:     -O2 -Wall -fwarn-tabs -funbox-strict-fields
-                   -fno-warn-orphans
-                   -fno-warn-unused-do-bind
-                   -fno-warn-name-shadowing
-                   -fno-warn-missing-pattern-synonym-signatures
-                   -fno-warn-unticked-promoted-constructors
-                   -fno-warn-unused-matches
-                   -fno-warn-type-defaults
+  -- ghc-options:     -O2 -Wall -fwarn-tabs -funbox-strict-fields
+                   -- -fno-warn-orphans
+                   -- -fno-warn-unused-do-bind
+                   -- -fno-warn-name-shadowing
+                   -- -fno-warn-missing-pattern-synonym-signatures
+                   -- -fno-warn-unticked-promoted-constructors
+                   -- -fno-warn-unused-matches
+                   -- -fno-warn-type-defaults
 
 Executable expresso
   Main-Is:         Repl.hs
-  Hs-Source-Dirs:  src
+  Hs-Source-Dirs:  src, ../strats/src
   Build-Depends:   base, containers, hashable, mtl, mtl-compat, void, transformers, parsec, ansi-wl-pprint,
                    unordered-containers, haskeline, directory, filepath, bytestring, text
   Other-Modules:   Expresso.Parser
@@ -44,6 +44,7 @@ Executable expresso
                    Expresso.Pretty
                    Expresso.Utils
                    Expresso
+                   Control.Monad.Var
 
   ghc-options:     -O2 -Wall -fwarn-tabs -funbox-strict-fields
                    -fno-warn-orphans
@@ -57,7 +58,7 @@ Executable expresso
 Test-Suite test-expresso
   Type:            exitcode-stdio-1.0
   Main-Is:         Tests.hs
-  Hs-Source-Dirs:  src
+  Hs-Source-Dirs:  src, ../strats/src
   Other-Modules:   Expresso
                    Expresso.Eval
                    Expresso.Parser
@@ -66,6 +67,7 @@ Test-Suite test-expresso
                    Expresso.Type
                    Expresso.TypeCheck
                    Expresso.Utils
+                   Control.Monad.Var
   Build-Depends:   base, containers, hashable, mtl, parsec, ansi-wl-pprint,
                    unordered-containers, haskeline, directory, filepath,
                    expresso, tasty, tasty-hunit, vinyl, bytestring, text

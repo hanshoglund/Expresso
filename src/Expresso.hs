@@ -42,9 +42,8 @@ import qualified Expresso.TypeCheck as TypeCheck
 import qualified Expresso.Parser as Parser
 
 
-runEvalE :: EvalM a -> ExceptT String IO a
-runEvalE = ExceptT . pure . Eval.runEvalM
-
+{- runEvalE :: EvalIO a -> ExceptT String IO a -}
+runEvalE = Eval.runEvIO'
 
 typeOfWithEnv :: TypeEnv -> TIState -> ExpI -> IO (Either String Type)
 typeOfWithEnv tEnv tState ei = runExceptT $ do
@@ -59,8 +58,8 @@ typeOfString str = runExceptT $ do
     top <- ExceptT $ return $ Parser.parse "<unknown>" str
     ExceptT $ typeOf top
 
-type Val = Value'
-type Envi = Env EvalM
+type Val = Eval.ValueIO
+type Envi = Eval.EnvIO
 
 evalWithEnv
     :: FromValue a

@@ -282,8 +282,8 @@ instance (f ~ ElField, KnownSymbol k, FromValue v, FromValue (Rec f rs)) => From
           v <- fromValue =<< force x
           r <- fromValue (VRecord r)
           pure $ rCons kp v r
-        Nothing -> throwError $ "bad record, no '" -- FIXME ++ k ++ "'"
-      v -> throwError $ "not a record: " -- FIXME ++ show v
+        Nothing -> failed $ "bad record, no '" -- FIXME ++ k ++ "'"
+      v -> failed $ "not a record: " -- FIXME ++ show v
     where
       k = symbolVal kp
       kp = (undefined :: F k)
@@ -446,7 +446,7 @@ hasValueF2 str a b expected = testCase str $ do
       assertEqual "" expected actual
 
 
-hasValue' :: (Eq b, Show b, FromValue a) => String -> (a -> EvalM b) -> b -> TestTree
+hasValue' :: (Eq b, Show b, FromValue a) => String -> (a -> EvalIO b) -> b -> TestTree
 hasValue' str f expected = testCase str $ do
     result <- evalString str
     case result of
