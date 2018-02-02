@@ -40,7 +40,6 @@
 module Expresso.Eval(
     eval
   , bind
-  , mkThunk
   , ppValue
   , ppValue'
 
@@ -111,26 +110,37 @@ import Data.Foldable
 import Data.Traversable
 #endif
 
-
-
-{- import Debug.Trace -}
+type f ~> g = forall x . f x -> g x
+type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
 -- |
 -- Call-by-need environment
 -- A HashMap makes it easy to support record wildcards
 type Env f = HashMap Name (Thunk f)
 
+-- | Basic implementation of MonadEval, which evaluates lazily
+-- (TODO may not perform full call-by-need) and ignores most effects.
 newtype EvalM a = EvalM { runEvalT :: ExceptT String Identity a }
 deriving instance Functor EvalM
 deriving instance Applicative EvalM
 deriving instance Monad EvalM
 deriving instance MonadError String EvalM
+instance Alternative EvalM where
+  EvalM a <|> EvalM b = EvalM (a <|> b)
+  empty = EvalM empty
+instance MonadEval EvalM where
+  force = force_
+  delay = return . Thunk
+  evalRef _ = pure $ VRecord mempty
+  trace msg = toValue' <$> pure ()
 
--- (T -> T) -> T
+runEvalIO :: EvalM a -> IO a
+runEvalIO = either error pure . runEvalM'
+
+
 type Thunk = ThunkF ()
 newtype ThunkF hof qq = Thunk { force_ :: qq (ValueF hof qq) }
 
-type f ~> g = forall x . f x -> g x
 
 hoistThunk :: Functor f => (f ~> g) -> ThunkF Void f -> ThunkF Void g
 hoistThunk f (Thunk t) = Thunk (f . fmap (hoistValue f) $ t)
@@ -149,56 +159,34 @@ hoistValue f = go
 
     goT = hoistThunk f
 
-type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
-
+-- |
+-- This class describes a monad with the effects required
+-- to evaluate an expression. They can be viewed as an
+-- overloadable interpretation of effects in the source
+-- language.
+--
+-- Along with FromValue and ToValue these give you an
+-- interpretation of Expresso functions as Haskell
+-- functions.
+--
 class ApplicativeMonadError String f => MonadEval f where
   force    :: Thunk f -> f (Value f)
   delay    :: f (Value f) -> f (Thunk f)
   evalRef  :: String -> f (Value f)
   trace    :: String -> f (Value f)
-instance Alternative EvalM where
-  EvalM a <|> EvalM b = EvalM (a <|> b)
-  empty = EvalM empty
-instance MonadEval EvalM where
-  force = force_
-  delay = return . Thunk
-  evalRef _ = pure $ VRecord mempty
-  trace msg = toValue' <$> pure ()
-
-mkThunk :: (MonadEval f) => f (Value f) -> f (Thunk f)
-mkThunk = delay
-
-mkThunk' :: (MonadEval f) => f (Value f) -> f (Thunk f)
-mkThunk' = delay
 
 valueToThunk :: Applicative qq => Value qq -> Thunk qq
 valueToThunk = Thunk . pure
 
-{- data EvalIO a = EvalIO { runEvalIO :: IO a } -}
-  {- deriving (Functor, Applicative, Monad) -}
-{- instance MonadError EvalIO where -}
-  {- throwError = error -}
-  {- catchError = error "TODO" -}
-
-{- -- Note: Throwaway IO instance with bad 'catch' behavior -}
-{- -- Do not use for serious code... -}
-{- instance MonadEval EvalIO where -}
-  {- force = runEvalIO . force -}
-    {- where -}
-runEvalIO :: EvalM a -> IO a
-runEvalIO = either error pure . runEvalM'
-
-
 instance Show (Thunk qq) where
     show _ = "<Thunk>"
 
-
--- TODO replace the hof param with using (Const Void) for qq
-
 type FirstOrderValue = ValueF Void
+
 type Value = ValueF ()
 pattern VLam x = VLamF x ()
+
 data ValueF hof qq
   = VLamF     !(ThunkF hof qq -> qq (ValueF hof qq)) hof
   | VInt     !Integer
@@ -210,12 +198,6 @@ data ValueF hof qq
   | VRecord  !(HashMap Label (ThunkF hof qq)) -- field order no defined
   | VVariant !Label !(ThunkF hof qq)
 
-{- class RunShow f where -}
-  {- runShow :: f a -> Either String a -}
-{- instance RunShow Identity where -}
-  {- runShow (Identity x) = Right x -}
-{- instance RunShow EvalM where -}
-  {- runShow = runEvalM' -}
 
 instance Show Value' where
   -- TODO this doesn't just work for EvalM, but for any f where we have
@@ -280,12 +262,12 @@ eval env e = cata alg e env
     alg (EVar v :*: _)         env = lookupValue env v >>= force
     alg (EApp f x :*: K pos)   env = do
         f' <- f env
-        x' <- mkThunk (x env)
+        x' <- delay (x env)
         evalApp pos f' x'
     alg (ELam b e1 :*: _  )    env = evalLam env b e1
     alg (EAnnLam b _ e1 :*: _) env = evalLam env b e1
     alg (ELet b e1 e2 :*: _)   env = do
-        t    <- mkThunk $ e1 env
+        t    <- delay $ e1 env
         env' <- bind env b t
         e2 env'
     alg (ERef x _ :*: pos)     _   = evalRef x
@@ -386,15 +368,15 @@ evalPrim pos p = case p of
 
     Cond     -> VLam $ \c -> return $ VLam $ \t -> return $ VLam $ \f ->
         fromValue' c >>= \c -> if c then force t else force f
-    FixPrim       -> mkStrictLam $ \f -> fix (evalApp pos f <=< mkThunk)
+    FixPrim       -> mkStrictLam $ \f -> fix (evalApp pos f <=< delay)
 
     -- We cannot yet define operators like this in the language
     FwdComp       -> mkStrictLam2 $ \f g ->
         return $ VLam $ \x ->
-            mkThunk (evalApp pos f x) >>= evalApp pos g
+            delay (evalApp pos f x) >>= evalApp pos g
     BwdComp    -> mkStrictLam2 $ \f g ->
         return $ VLam $ \x ->
-            mkThunk (evalApp pos g x) >>= evalApp pos f
+            delay (evalApp pos g x) >>= evalApp pos f
 
     {- JustPrim      -> mkStrictLam $ \v -> return $ VMaybe (Just v) -}
     {- NothingPrim   -> VMaybe Nothing -}
@@ -416,7 +398,7 @@ evalPrim pos p = case p of
         let g a b = do g' <- evalApp pos f (Thunk $ return a)
                        evalApp pos g' (Thunk $ return b)
         z'  <- force z
-        xs' <- (force >=> fromValueL return) xs -- :: EvalM [Value qq]
+        xs' <- (force >=> fromValueL return) xs -- :: qq [Value qq]
         foldrM g z' xs'
     RecordExtend l   -> VLam $ \v -> return $ VLam $ \r ->
         (VRecord . HashMap.insert l v) <$> (force >=> fromValueRTh) r
@@ -512,14 +494,14 @@ equalValues p (VVariant l1 v1) (VVariant l2 v2)
 equalValues p v1 v2 = failOnValues p [v1, v2]
 
 -- NB: evaluates deeply
-compareValues :: MonadEval f => Pos -> Value qq -> Value qq -> f Ordering
+compareValues :: MonadEval f => Pos -> Value f -> Value f -> f Ordering
 compareValues _ (VInt i1)    (VInt i2)    = return $ compare i1 i2
 compareValues _ (VDbl d1)    (VDbl d2)    = return $ compare d1 d2
 compareValues _ (VBool b1)   (VBool b2)   = return $ compare b1 b2
 compareValues _ (VChar c1)   (VChar c2)   = return $ compare c1 c2
 compareValues p (VList xs)   (VList ys)   = go xs ys
   where
-    {- go :: [Value] -> [Value] -> EvalM Ordering -}
+    {- go :: [Value] -> [Value] -> f Ordering -}
     go []      []      = return EQ
     go (_:_)   []      = return GT
     go []      (_:_)   = return LT
@@ -1113,7 +1095,7 @@ instance (HasType a, HasType b) => HasType (a -> f b) where
 
 fromValue1 :: (ToValue a, FromValue b, MonadEval f) => Value f -> a -> f b
 fromValue1 (VLam fv) a = do
-  av <- mkThunk' . pure =<< toValueF a
+  av <- delay . pure =<< toValueF a
   r <- fv av
   fromValue r
 fromValue1 v _ = throwError $ "fromValue1: Expected a lambda expression"

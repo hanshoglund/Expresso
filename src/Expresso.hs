@@ -118,7 +118,7 @@ bind (tEnv, tState, env) b ei = do
         case res'e of
             Left err    -> error err
             Right tEnv' -> do
-                thunk <- runEvalIO $ Eval.mkThunk $ Eval.eval env e
+                thunk <- runEvalIO $ Eval.delay $ Eval.eval env e
                 env'  <- runEvalIO $ Eval.bind env b thunk
                 return (tEnv', tState', env')
   where
