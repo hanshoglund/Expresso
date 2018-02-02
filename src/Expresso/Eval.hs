@@ -1127,15 +1127,25 @@ type Value' = Value EvalM
 toValue' :: ToValue a => a -> Value'
 toValue' =  toValue
 
--- NOTE: This is safe, but introduces logs of redundant traversals
-unsafeToValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)
--- FIXME, replace the thing in hoist with something that provides a NT
---  EvalM ~> f a, constraining f to MonadEval
+
+-- | Like 'toValue', but interpret into an arbitrary Functor.
 --
--- If we replace the use of EvalM on Value' with something that's truly a free MonadEval,
--- we can do this even better!
-unsafeToValueF = pure . fromFO . hoistValue (pure . either error id . runEvalM') . toFO . toValue
+-- This is only defined for non-function types, as generally there is
+-- generally no way to hoist a Value with lambdas. E.g. this can
+-- not be proved/implemented:
+--
+--    hoistValue :: Functor f => (f ~> g) -> Value f -> Value g
+--
+-- This function is safe to call as long as there is no instance (ToValue (_ -> _))
+--
+unsafeToValueF :: forall f a. MonadEval f => ToValue a => a -> f (Value f)
+unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
   where
+    -- TODO this shoult be a N.T. from a free MonadEval to f.
+    -- (EvalM is not quite that yet, but close!)
+    nt :: EvalM ~> f
+    nt = either throwError pure . runEvalM'
+
     toFO :: forall f . Functor f => Value f -> FirstOrderValue f
     toFO = go
       where
