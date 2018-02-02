@@ -33,7 +33,7 @@ data Mode = SingleLine | MultiLine | Quitting
 data ReplState = ReplState
   { stateMode    :: Mode
   , stateBuffer  :: [String]
-  , stateEnv     :: (TypeEnv, TIState, Env)
+  , stateEnv     :: (TypeEnv, TIState, Env EvalM)
   }
 
 data Command
@@ -51,6 +51,8 @@ data Line
   | Term ExpI
   | Decl (Bind Name) ExpI
   | NoOp
+
+type Val = Value EvalM
 
 type Repl = InputT (StateT ReplState IO)
 
@@ -148,7 +150,7 @@ doCommand c = case c of
     , ""
     ]
 
-doEval :: (Value -> IO String) -> ExpI -> Repl ()
+doEval :: (Val -> IO String) -> ExpI -> Repl ()
 doEval pp e = do
   envs <- lift $ gets stateEnv
   v'e  <- liftIO $ evalWithEnv' envs e
@@ -214,7 +216,7 @@ pFilePath = stringLiteral -- TODO
 setMode :: Mode -> ReplState -> ReplState
 setMode m s = s { stateMode = m }
 
-setEnv :: (TypeEnv, TIState, Env) -> ReplState -> ReplState
+setEnv :: (TypeEnv, TIState, Env EvalM) -> ReplState -> ReplState
 setEnv envs s = s { stateEnv = envs }
 
 addToBuffer :: String -> ReplState -> ReplState

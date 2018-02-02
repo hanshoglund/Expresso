@@ -337,6 +337,9 @@ tcRho = cata alg
         binds <- tcBinds pos b (Just t1) >>= mapM (inferSigma pos)
         extendEnv binds $
             e2 mty
+    alg (ERef e annT :*: K pos) mty = do
+        annT  <- instWildcards annT
+        instSigma pos annT mty
     alg (EAnn e annT :*: K pos) mty = do
         annT  <- instWildcards annT
         checkSigma pos e annT

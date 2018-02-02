@@ -282,8 +282,8 @@ instance (f ~ ElField, KnownSymbol k, FromValue v, FromValue (Rec f rs)) => From
           v <- fromValue =<< force x
           r <- fromValue (VRecord r)
           pure $ rCons kp v r
-        Nothing -> throwError $ "bad record, no '" ++ k ++ "'"
-      v -> throwError $ "not a record: " ++ show v
+        Nothing -> throwError $ "bad record, no '" -- FIXME ++ k ++ "'"
+      v -> throwError $ "not a record: " -- FIXME ++ show v
     where
       k = symbolVal kp
       kp = (undefined :: F k)
@@ -387,7 +387,7 @@ foreignExportTests = testGroup
 
 
   -- Mono id function
-  , hasValueF "x -> x" (2 :: Int) (2 :: Int)
+  {- , hasValueF "x -> x" (2 :: Int) (2 :: Int) -}
   {- , hasValueF "x -> y -> z" (2 :: Int) (2 :: Int) -}
   ]
 
@@ -414,7 +414,7 @@ isValue :: ToValue a => String -> a -> TestTree
 isValue expected hsVal = testCase caseStr $
   assertEqual "" expected actual
   where
-    actual = show $ toValue hsVal
+    actual = show $ toValue' hsVal
     caseStr = expected
 
 

@@ -48,13 +48,19 @@ module Expresso.Eval(
   , runEvalIO
   , Env
   , EvalM
-  , Value(..)
-  {- , force -}
+  , ValueF(..)
+  , ThunkF(..)
+  , Value
+  , Thunk
+
+{- , force -}
 
   , HasType(..)
   , FromValue(..)
   , ToValue(..)
-
+  , Value'
+  , toValue' -- TODO flip conventions, make this part of ToValue class with default...
+  , MonadEval(..)
 
   -- TODO testing
   , V1(..)
@@ -136,7 +142,6 @@ hoistValue f = go
     go (VInt x) = VInt x
     go (VDbl x) = VDbl x
     go (VChar x) = VChar x
-    go (VList x) = error "FIXME"
 
 
 
@@ -184,6 +189,9 @@ runEvalIO = either error pure . runEvalM'
 instance Show (Thunk qq) where
     show _ = "<Thunk>"
 
+
+-- TODO replace the hof param with using (Const Void) for qq
+
 type FirstOrderValue = ValueF Void
 type Value = ValueF ()
 pattern VLam x = VLamF x ()
@@ -198,7 +206,16 @@ data ValueF hof qq
   | VRecord  !(HashMap Label (ThunkF hof qq)) -- field order no defined
   | VVariant !Label !(ThunkF hof qq)
 
-instance Show (Value EvalM) where
+{- class RunShow f where -}
+  {- runShow :: f a -> Either String a -}
+{- instance RunShow Identity where -}
+  {- runShow (Identity x) = Right x -}
+{- instance RunShow EvalM where -}
+  {- runShow = runEvalM' -}
+
+instance Show Value' where
+  -- TODO this doesn't just work for EvalM, but for any f where we have
+  --  f ~> Either String
   show = showR . runEvalM' . ppValue'
 
 
@@ -1082,6 +1099,10 @@ fromValue1 (VLam fv) a = do
   r <- fv av
   fromValue r
     where
+
+type Value' = Value EvalM
+toValue' :: ToValue a => a -> Value'
+toValue' = either (error . ("toValue: unexpected: " ++)) id . runEvalM' . toValueF
 
 -- NOTE: This is safe, but introduces logs of redundant traversals
 toValueF :: forall f a. Applicative f => ToValue a => a -> f (Value f)

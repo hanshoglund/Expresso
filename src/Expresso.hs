@@ -31,7 +31,7 @@ import Control.Monad.Except (ExceptT(..), runExceptT, throwError)
 import Data.Monoid
 import Control.Applicative
 
-import Expresso.Eval (Env, EvalM, FromValue(..), Value(..))
+import Expresso.Eval (Env, EvalM, FromValue(..), ValueF(..), Value)
 import Expresso.TypeCheck (TIState, initTIState)
 import Expresso.Pretty (render)
 import Expresso.Syntax
@@ -59,9 +59,12 @@ typeOfString str = runExceptT $ do
     top <- ExceptT $ return $ Parser.parse "<unknown>" str
     ExceptT $ typeOf top
 
+type Val = Value EvalM
+type Envi = Env EvalM
+
 evalWithEnv
     :: FromValue a
-    => (TypeEnv, TIState, Env)
+    => (TypeEnv, TIState, Envi)
     -> ExpI
     -> IO (Either String a)
 evalWithEnv env expr = runExceptT $ do
@@ -69,9 +72,9 @@ evalWithEnv env expr = runExceptT $ do
   ExceptT $ runEvalM $ Eval.fromValue v
 
 evalWithEnv'
-    :: (TypeEnv, TIState, Env)
+    :: (TypeEnv, TIState, Envi)
     -> ExpI
-    -> IO (Either String Value)
+    -> IO (Either String Val)
 evalWithEnv' (tEnv, tState, env) ei = runExceptT $ do
   e      <- Parser.resolveImports ei
   _sigma <- ExceptT . return $ inferTypes tEnv tState e
@@ -81,7 +84,7 @@ evalWithEnv' (tEnv, tState, env) ei = runExceptT $ do
 eval :: FromValue a => ExpI -> IO (Either String a)
 eval = evalWithEnv (mempty, initTIState, mempty)
 
-eval' :: ExpI -> IO (Either String Value)
+eval' :: ExpI -> IO (Either String Val)
 eval' = evalWithEnv' (mempty, initTIState, mempty)
 
 evalFile :: FromValue a => FilePath -> IO (Either String a)
@@ -94,17 +97,17 @@ evalString str = runExceptT $ do
     top <- ExceptT $ return $ Parser.parse "<unknown>" str
     ExceptT $ eval top
 
-evalString' :: String -> IO (Either String Value)
+evalString' :: String -> IO (Either String Val)
 evalString' str = runExceptT $ do
     top <- ExceptT $ return $ Parser.parse "<unknown>" str
     ExceptT $ eval' top
 
 -- used by the REPL to bind variables
 bind
-    :: (TypeEnv, TIState, Env)
+    :: (TypeEnv, TIState, Envi)
     -> Bind Name
     -> ExpI
-    -> IO (TypeEnv, TIState, Env)
+    -> IO (TypeEnv, TIState, Envi)
 bind (tEnv, tState, env) b ei = do
     r  <- runExceptT $ Parser.resolveImports ei
     case r of
@@ -130,9 +133,9 @@ showType :: Type -> String
 showType = render . ppType
 
 -- | This does *not* evaluate deeply
-showValue :: Value -> String
+showValue :: Val -> String
 showValue = render . Eval.ppValue
 
 -- | This evaluates deeply
-showValue' :: Value -> IO String
+showValue' :: Val -> IO String
 showValue' v = either id render <$> (runEvalM $ Eval.ppValue' v)
