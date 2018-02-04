@@ -153,6 +153,18 @@ runEvalIO :: EvalIO a -> IO a
 {- runEvalIO = either error pure . runEvalM -}
 runEvalIO = runEvIO
 
+-- FIXME try to recast EvalM as (Ev (State (Map Text (Value EvalM)))) or similar, replacing MonadVar with
+-- class MonadMonoVar f where
+--   type Var f :: *
+--   type Val f :: *
+--   newVar :: Val f -> Var f
+--      etc.
+-- instance MonadMonoVar (State (Map k v) where
+--   type Var (State (Map k v)) = k
+--   type Val (State (Map k v)) = v
+--      etc.
+
+
 newtype EvalM a = EvalM { runEvalM_ :: ExceptT String Identity a }
 deriving instance Functor EvalM
 deriving instance Applicative EvalM
