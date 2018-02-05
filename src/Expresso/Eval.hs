@@ -135,8 +135,6 @@ type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 type Env f = HashMap Name (Thunk f)
 
 
-runEvalIO :: EvalIO a -> IO a
-runEvalIO = runEvIO
 
 -- | Similar to MonadVar, but stores values of a single fixed type.
 class Monad f => MonadMonoVar (f :: * -> *) where
@@ -183,7 +181,7 @@ instance (ApplicativeMonad f) => MonadMonoVar (Ev3 f) where
 
 
 
-
+-- | Similar to 'MonadWriter String', but allows for more instances (and a separate namespace from Writer).
 class Monad f => MonadTrace f where
   trace_ :: String -> f ()
 
@@ -196,20 +194,17 @@ instance MonadTrace Identity where
   trace_ = const $ pure ()
 
 
--- | Run in terms of
+-- | Run evaluation in terms of MonadTrace and MonadVar.
 --
---    MonadError String
---    MonadVar for laziness
---    MonadLog for trace
+-- This is faster than Ev3, but only allows for IO and ST-based instances.
 newtype Ev (f :: * -> *) a = Ev { runEv_ :: ExceptT String f a }
+
 deriving instance MonadTrans Ev
 deriving instance (Applicative f, Monad f) => Functor (Ev f)
 deriving instance (Applicative f, Monad f) => Applicative (Ev f)
 deriving instance (Applicative f, Monad f) => Monad (Ev f)
 deriving instance (Applicative f, Monad f) => Alternative (Ev f)
-  {- Ev a <|> Ev b = Ev (a <|> b) -}
-  {- empty = Ev empty -}
-{- deriving instance MonadError String f => MonadError String (Ev f) -}
+
 instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (Ev f) where
   trace x = lift $ trace_ x
   failed x = Ev $ throwError x
@@ -232,6 +227,10 @@ runEv = either throwError pure <=< runExceptT . runEv_
 runEvST :: (forall s . Ev (ST s) a) -> (Either String a)
 runEvST x = runST $ runExceptT $ runEv_ x
 
+
+runEvalIO :: EvalIO a -> IO a
+runEvalIO = runEvIO
+
 runEvIO :: Ev IO a -> IO a
 runEvIO = either error pure <=< runExceptT . runEv_
 
@@ -240,10 +239,7 @@ runEvIO' = runEv_
 
 
 
-
-
-
-
+-- | Run evaluation in terms of MonadTrace. If you don't care about 'trace', see 'EvalM'.
 newtype Ev3 (f :: * -> *) a = Ev3 { runEv3_ ::
     ExceptT String
       (StateT
@@ -279,6 +275,8 @@ instance (ApplicativeMonad f, MonadTrace f) => MonadEval (Ev3 f) where
           pure r
   force (Thunk k) = k
 
+
+-- | Run pure evaluation.
 runEv3 :: (Applicative f, Monad f, MonadError String f) => Ev3 f a -> f a
 runEv3 = either throwError pure <=< runEv3Either
 
@@ -339,7 +337,7 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   force    :: Thunk f -> f (Value f)
   delay    :: f (Value f) -> f (Thunk f)
   evalRef  :: String -> f (Value f)
-  trace    :: String -> f () -- TODO should be: String -> f ()
+  trace    :: String -> f ()
   failed   :: String -> f a
 
 valueToThunk :: Applicative qq => Value qq -> Thunk qq
