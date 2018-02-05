@@ -58,8 +58,8 @@ typeOfString str = runExceptT $ do
     top <- ExceptT $ return $ Parser.parse "<unknown>" str
     ExceptT $ typeOf top
 
-type Val = Eval.ValueIO
-type Envi = Eval.EnvIO
+type Val = Eval.Value Eval.EvalIO
+type Envi = Eval.Env Eval.EvalIO
 
 evalWithEnv
     :: FromValue a

@@ -20,7 +20,7 @@ import qualified System.Console.Haskeline as HL
 import qualified Text.Parsec as P
 
 import Expresso
-import Expresso.Eval (EnvIO, EvalIO)
+import Expresso.Eval (Env, EvalIO)
 import Expresso.Parser ( pExp, pLetDecl, whiteSpace
                        , reserved, reservedOp, stringLiteral
                        )
@@ -34,7 +34,7 @@ data Mode = SingleLine | MultiLine | Quitting
 data ReplState = ReplState
   { stateMode    :: Mode
   , stateBuffer  :: [String]
-  , stateEnv     :: (TypeEnv, TIState, EnvIO)
+  , stateEnv     :: (TypeEnv, TIState, Env EvalIO)
   }
 
 data Command
@@ -217,7 +217,7 @@ pFilePath = stringLiteral -- TODO
 setMode :: Mode -> ReplState -> ReplState
 setMode m s = s { stateMode = m }
 
-setEnv :: (TypeEnv, TIState, EnvIO) -> ReplState -> ReplState
+setEnv :: (TypeEnv, TIState, Env EvalIO) -> ReplState -> ReplState
 setEnv envs s = s { stateEnv = envs }
 
 addToBuffer :: String -> ReplState -> ReplState

@@ -44,7 +44,6 @@ module Expresso.Eval(
   , ppValue
   , ppValue'
 
-  , Env
   , EvalM
   , EvalIO
   , runEvalM
@@ -52,16 +51,13 @@ module Expresso.Eval(
   , runEvIO'
   , ValueF(..)
   , ThunkF(..)
+  , Env
   , Value
   , Thunk
   , Env'
   , Value'
   , Thunk'
-  , EnvIO
-  , ValueIO
-  , ThunkIO
 
-{- , force -}
 
   , HasType(..)
   , FromValue(..)
@@ -292,10 +288,6 @@ runEvalM = runIdentity . runEvalTEither
 
 type EvalM  = EvalT Identity
 type EvalIO = EvalPrimT IO
-
-type ValueIO = Value EvalIO
-type ThunkIO = Thunk EvalIO
-type EnvIO   = Env   EvalIO
 
 type Value' = Value EvalM
 type Thunk' = Thunk EvalM
