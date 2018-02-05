@@ -466,6 +466,7 @@ assertTrue = return ()
 
 -- TODO
 -- More cleanup: doc stuff, rename unsafeFromV...
+-- Make lists strict
 -- Add/test typeOfValue
 -- Add/test ref prim
 -- separate user errors from compile/TC errors...

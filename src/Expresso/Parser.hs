@@ -152,6 +152,7 @@ opTable  = [ [ prefix "-" Neg
 
 pPrimFun = msum
   [ fun "error"   ErrorPrim
+  , fun "trace"   Trace
   , fun "show"    Show
   , fun "not"     Not
   {- , fun "maybe"   MaybePrim -}

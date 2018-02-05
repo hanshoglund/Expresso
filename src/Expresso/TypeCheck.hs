@@ -461,8 +461,8 @@ tcPrim pos prim = annotate pos $ case prim of
     in _TForAll [a] $ _TFun (_TVar a) (_TList _TChar)
   Trace                  ->
     let a = newTyVar CNone 'a'
-    in _TForAll [a] $ _TFun (_TFun (_TList _TChar) (_TVar a))
-                                (_TVar a)
+    in _TForAll [a] $ _TFun (_TList _TChar)
+                              (_TFun (_TVar a) (_TVar a))
   ErrorPrim              ->
     let a = newTyVar CNone 'a'
     in _TForAll [a] $ _TFun (_TList _TChar) (_TVar a)

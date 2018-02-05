@@ -70,7 +70,7 @@ module Expresso.Eval(
   , fromValue2
   , FromValue1(..)
 
-  -- ** MonadEval class, evaluation effects
+  -- * MonadEval class, evaluation effects
   , MonadEval(..)
   , EvalT
   , EvalPrimT
@@ -79,6 +79,9 @@ module Expresso.Eval(
   , runEvIO'
   , EvalM
   , EvalIO
+
+  -- * References
+  , Ref(..)
 )
 where
 
@@ -115,7 +118,7 @@ import Data.IORef
 import Expresso.Syntax
 import Expresso.Type
 import Expresso.Pretty
-import Expresso.Utils (cata, (:*:)(..), K(..))
+import Expresso.Utils (Fix(..), cata, (:*:)(..), K(..))
 import qualified Expresso.Parser as Parser
 
 import Control.Monad.Var hiding (Var)
@@ -456,10 +459,10 @@ evalApp pos fv         _  =
 -- effects some type @f@.
 evalPrim :: forall f . MonadEval f => Pos -> Prim -> Value f
 evalPrim pos p = case p of
-    Trace     -> VLam $ \s -> do
-        msg <- fromValue' s
-        trace msg
-        pure $ VRecord mempty
+    Trace     -> _Lam2 $ \msg x -> do
+        msgV <- fromValue' msg
+        trace msgV
+        force x
     ErrorPrim     -> VLam $ \s -> do
         msg <- fromValue' s
         failed $ "error (" ++ show pos ++ "):" ++ msg
@@ -622,6 +625,13 @@ mkStrictLam f = VLam $ \x -> force x >>= f
 
 mkStrictLam2 :: MonadEval f => (Value f -> Value f -> f (Value f)) -> Value f
 mkStrictLam2 f = mkStrictLam $ \v -> return $ mkStrictLam $ f v
+
+_Lam :: MonadEval f => (Thunk f -> f (Value f)) -> Value f
+_Lam f = VLam $ \x -> f x
+
+_Lam2 :: MonadEval f => (Thunk f -> Thunk f -> f (Value f)) -> Value f
+_Lam2 f = _Lam $ \x -> pure $ _Lam $ f x
+
 
 -- | Strict version of 'fromValue'.
 fromValue' :: (MonadEval f, FromValue a) => Thunk f -> f a
@@ -1508,5 +1518,20 @@ roundTrip = undefined
 {- traceV x = trace (showR . runEvalM $ ppValue' x) x -}
 showR (Right x) = show x
 showR (Left e) = "<<Error:" <> show e <> ">>"
+
+
+-- | A remote reference to a value of some type.
+newtype Ref (a :: *) = Ref { getRef :: String } deriving (G.Generic, Show)
+
+instance HasType a => HasType (Ref a) where
+  typeOf = typeOf . inside
+
+{- instance FromValue a => FromValue (Ref a) where -}
+  {- fromValue  -}
+
+{- instance ToValue a => ToValue (Ref a) where -}
+  {- toValue r@(Ref x) = either (error "") id $ runEvalM $ eval mempty (Fix $ ERef x ty :*: K dummyPos) -}
+    {- where -}
+      {- ty = typeOf $ pure r -}
 
 
