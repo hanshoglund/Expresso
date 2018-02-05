@@ -724,6 +724,15 @@ recordValues = List.sortBy (comparing fst) . HashMap.toList
 --
 -- instance HasType FooBar
 -- @
+--
+-- The solution is to encode the recursion using lists.
+--
+-- @
+-- instance HasType FooBar where
+--   typeOf _ = (undefined :: Proxy [()])
+-- @
+--
+-- TODO use Fix or Iso/Via etc to make this easier.
 
 
 -- |
