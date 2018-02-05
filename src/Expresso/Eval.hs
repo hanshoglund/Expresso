@@ -2,6 +2,10 @@
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
+-- FIXME
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
+
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -27,7 +31,6 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-
 #if __GLASGOW_HASKELL__ <= 708
 {-# LANGUAGE OverlappingInstances #-}
 #endif
@@ -46,6 +49,8 @@ module Expresso.Eval(
 
   , EvalM
   , EvalIO
+  , EvalT
+  , EvalPrimT
   , runEvalM
   , runEvalIO
   , runEvIO'
@@ -76,9 +81,9 @@ module Expresso.Eval(
 where
 
 import Data.Hashable
-import Control.Monad.Except hiding (mapM, maximum)
-import Control.Monad.State hiding (mapM, maximum)
-import Control.Monad.Reader hiding (mapM, maximum)
+import Control.Monad.Except hiding (mapM)
+import Control.Monad.State hiding (mapM)
+import Control.Monad.Reader hiding (mapM)
 import Control.Applicative
 import Control.Arrow (Kleisli(..))
 import Data.Bifunctor (first)
@@ -87,7 +92,6 @@ import Data.Foldable (foldrM, toList)
 import Data.Map (Map)
 import Data.HashMap.Strict (HashMap)
 import Data.Coerce
-import Unsafe.Coerce
 import Data.Maybe
 import Data.Monoid
 import Data.Ord
@@ -1242,12 +1246,11 @@ instance MonadEval f => FromValue1 (Kleisli f) where
   type Arr (Kleisli f) = f
   fv x = Kleisli $ fromValue1 x
 
+newtype Unsafe a b = Unsafe { runUnsafe :: a -> b }
 
-{- newtype Unsafe a b = Unsafe { runUnsafe :: a -> b } -}
-
-{- instance FromValue1 Unsafe where -}
-  {- type Arr Unsafe = EvalM -}
-  {- fv x = Unsafe $ either error id . runEvalM <$> fromValue1 x -}
+instance FromValue1 Unsafe where
+  type Arr Unsafe = EvalM
+  fv x = Unsafe $ either error id . runEvalM <$> fromValue1 x
 
 
 fromValue1 :: (ToValue a, FromValue r, MonadEval f) => Value f -> a -> f r

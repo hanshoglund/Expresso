@@ -42,7 +42,7 @@ import qualified Expresso.TypeCheck as TypeCheck
 import qualified Expresso.Parser as Parser
 
 
-{- runEvalE :: EvalIO a -> ExceptT String IO a -}
+runEvalE :: Eval.EvalPrimT IO a -> ExceptT String IO a
 runEvalE = Eval.runEvIO'
 
 typeOfWithEnv :: TypeEnv -> TIState -> ExpI -> IO (Either String Type)
