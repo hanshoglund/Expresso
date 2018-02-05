@@ -702,10 +702,11 @@ recordValues = List.sortBy (comparing fst) . HashMap.toList
 -- instance (FromValue a, FromValue b) => FromValue (V2 a b)
 -- @
 --
--- Unfortunately due to limitations in GHCs generics, we can't easily derive
--- 'HasType' for recursive Haskell types (including mutually recursive types).
+-- Unfortunately due to limitations in GHC Generics, the deived instances will
+-- loop for recursive types. This includes mutually recursive types.
 --
 -- For example this will loop:
+--
 -- @
 -- data FooBar = Foo | Bar Foo deriving (Generic)
 --
