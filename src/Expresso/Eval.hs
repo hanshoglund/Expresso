@@ -56,6 +56,7 @@ module Expresso.Eval(
   , ValueF(..)
   , eval
   , bind
+  , bind'
   , ppValue
   , ppValue'
 
@@ -64,6 +65,7 @@ module Expresso.Eval(
   , HasType(..)
   , FromValue(..)
   , ToValue(..)
+  , fromValue'
   , fromValue1
   , fromValue2
   , FromValue1(..)
@@ -298,7 +300,7 @@ type Thunk' = Thunk EvalM
 type Env'   = Env   EvalM
 
 type Thunk = ThunkF ()
-newtype ThunkF hof f = Thunk { force_ :: f (ValueF hof f) }
+newtype ThunkF h f = Thunk { force_ :: f (ValueF h f) }
 
 
 hoistThunk :: Functor f => (f ~> g) -> ThunkF Void f -> ThunkF Void g
@@ -354,16 +356,15 @@ type FirstOrderValue = ValueF Void
 type Value = ValueF ()
 pattern VLam x = VLamF x ()
 
-data ValueF hof f
-  = VLamF    !(ThunkF hof f -> f (ValueF hof f)) hof
+data ValueF h f
+  = VLamF    !(ThunkF h f -> f (ValueF h f)) h
   | VInt     !Integer
   | VDbl     !Double
   | VBool    !Bool
   | VChar    !Char
-  {- | VMaybe   !(Maybe Value) -}
-  | VList    ![ValueF hof f] -- lists are strict
-  | VRecord  !(HashMap Label (ThunkF hof f)) -- field order no defined
-  | VVariant !Label !(ThunkF hof f)
+  | VList    ![ValueF h f] -- lists are strict
+  | VRecord  !(HashMap Label (ThunkF h f)) -- field order no defined
+  | VVariant !Label !(ThunkF h f)
 
 
 instance Show Value' where
@@ -372,7 +373,7 @@ instance Show Value' where
   show = showR . runEvalM . ppValue'
 
 
--- | This does *not* evaluate deeply
+-- | This does /not/ evaluate deeply
 ppValue :: Value f -> Doc
 ppValue VLamF{}     = "<Lambda>"
 ppValue (VInt  i)   = integer i
@@ -417,7 +418,7 @@ extractChar _ = Nothing
 
 
 
-
+-- | Evaluate an expression to WHNF.
 eval :: forall f . MonadEval f => Env f -> Exp -> f (Value f)
 eval env e = cata alg e env
   where
@@ -588,13 +589,13 @@ evalPrim pos p = case p of
     {- p -> error $ show pos ++ " : Unsupported Prim: " ++ show p -}
 
 
--- non-strict bind
+-- | Non-strict bind.
 bind :: MonadEval f => Env f -> Bind Name -> Thunk f -> f (Env f)
 bind env b t = case b of
     Arg n -> return $ HashMap.insert n t env
     _     -> bind' env b t
 
--- strict bind
+-- | Strict bind.
 bind' :: MonadEval f => Env f -> Bind Name -> Thunk f -> f (Env f)
 bind' env b t = do
   v <- force t
@@ -622,6 +623,7 @@ mkStrictLam f = VLam $ \x -> force x >>= f
 mkStrictLam2 :: MonadEval f => (Value f -> Value f -> f (Value f)) -> Value f
 mkStrictLam2 f = mkStrictLam $ \v -> return $ mkStrictLam $ f v
 
+-- | Strict version of 'fromValue'.
 fromValue' :: (MonadEval f, FromValue a) => Thunk f -> f a
 fromValue' = force >=> fromValue
 
