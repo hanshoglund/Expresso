@@ -170,12 +170,12 @@ instance (ApplicativeMonad f, MonadMonoVar f) => MonadMonoVar (ExceptT e f) wher
   readMonoVar v = ExceptT $ fmap Right $ readMonoVar v
   writeMonoVar k v = ExceptT $ fmap Right $ writeMonoVar k v
 
-instance (ApplicativeMonad f) => MonadMonoVar (Ev3 f) where
-  type Key (Ev3 f) = Sum Int
-  type Val (Ev3 f) = Maybe (Value (Ev3 f))
-  newMonoVar v = Ev3 $ newMonoVar v
-  readMonoVar v = Ev3 $ readMonoVar v
-  writeMonoVar k v = Ev3 $ writeMonoVar k v
+instance (ApplicativeMonad f) => MonadMonoVar (EvalT f) where
+  type Key (EvalT f) = Sum Int
+  type Val (EvalT f) = Maybe (Value (EvalT f))
+  newMonoVar v = EvalT $ newMonoVar v
+  readMonoVar v = EvalT $ readMonoVar v
+  writeMonoVar k v = EvalT $ writeMonoVar k v
 
 
 
@@ -196,7 +196,7 @@ instance MonadTrace Identity where
 
 -- | Run evaluation in terms of MonadTrace and MonadVar.
 --
--- This is faster than Ev3, but only allows for IO and ST-based instances.
+-- This is faster than EvalT, but only allows for IO and ST-based instances.
 newtype Ev (f :: * -> *) a = Ev { runEv_ :: ExceptT String f a }
 
 deriving instance MonadTrans Ev
@@ -240,28 +240,28 @@ runEvIO' = runEv_
 
 
 -- | Run evaluation in terms of MonadTrace. If you don't care about 'trace', see 'EvalM'.
-newtype Ev3 (f :: * -> *) a = Ev3 { runEv3_ ::
+newtype EvalT (f :: * -> *) a = EvalT { runEvalT_ ::
     ExceptT String
       (StateT
-        (Map (Sum Int) (Maybe (Value (Ev3 f)))) f)
+        (Map (Sum Int) (Maybe (Value (EvalT f)))) f)
       a
       }
-instance MonadTrans Ev3 where
-  lift = Ev3 . liftExceptT . liftStateT
+instance MonadTrans EvalT where
+  lift = EvalT . liftExceptT . liftStateT
     where
       liftStateT :: Monad f => f a -> StateT s f a
       liftExceptT :: Monad f => f a -> ExceptT e f a
       liftStateT = lift
       liftExceptT = lift
-deriving instance (Applicative f, Monad f) => Functor (Ev3 f)
-deriving instance (Applicative f, Monad f) => Applicative (Ev3 f)
-deriving instance (Applicative f, Monad f) => Monad (Ev3 f)
-deriving instance (Applicative f, Monad f) => Alternative (Ev3 f)
+deriving instance (Applicative f, Monad f) => Functor (EvalT f)
+deriving instance (Applicative f, Monad f) => Applicative (EvalT f)
+deriving instance (Applicative f, Monad f) => Monad (EvalT f)
+deriving instance (Applicative f, Monad f) => Alternative (EvalT f)
 
 
-instance (ApplicativeMonad f, MonadTrace f) => MonadEval (Ev3 f) where
+instance (ApplicativeMonad f, MonadTrace f) => MonadEval (EvalT f) where
   trace x = lift $ trace_ x
-  failed x = Ev3 $ throwError x
+  failed x = EvalT $ throwError x
   evalRef x = error "TODO no evalRef"
   delay k = do
     v <- newMonoVar Nothing
@@ -277,20 +277,20 @@ instance (ApplicativeMonad f, MonadTrace f) => MonadEval (Ev3 f) where
 
 
 -- | Run pure evaluation.
-runEv3 :: (Applicative f, Monad f, MonadError String f) => Ev3 f a -> f a
-runEv3 = either throwError pure <=< runEv3Either
+runEvalT :: (Applicative f, Monad f, MonadError String f) => EvalT f a -> f a
+runEvalT = either throwError pure <=< runEvalTEither
 
-runEv3Either :: Monad m => Ev3 m a -> m (Either String a)
-runEv3Either = flip evalStateT mempty . runExceptT . runEv3_
+runEvalTEither :: Monad m => EvalT m a -> m (Either String a)
+runEvalTEither = flip evalStateT mempty . runExceptT . runEvalT_
 
 runEvalM :: EvalM a -> Either String a
-runEvalM = runIdentity . runEv3Either
+runEvalM = runIdentity . runEvalTEither
 
 
 
 
 
-type EvalM  = Ev3 Identity
+type EvalM  = EvalT Identity
 type EvalIO = Ev IO
 
 type ValueIO = Value EvalIO
