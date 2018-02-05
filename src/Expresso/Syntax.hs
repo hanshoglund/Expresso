@@ -70,9 +70,9 @@ data Prim
   | FwdComp
   | BwdComp
 
-  {- | JustPrim -}
-  {- | NothingPrim -}
-  {- | MaybePrim -}
+  {-  | JustPrim -}
+  {-  | NothingPrim -}
+  {-  | MaybePrim -}
 
   | ListEmpty
   | ListCons
