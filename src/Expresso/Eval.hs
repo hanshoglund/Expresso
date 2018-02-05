@@ -80,9 +80,9 @@ module Expresso.Eval(
 where
 
 import Data.Hashable
-import Control.Monad.Except hiding (mapM)
-import Control.Monad.State hiding (mapM)
-import Control.Monad.Reader hiding (mapM)
+import Control.Monad.Except hiding (mapM, maximum)
+import Control.Monad.State hiding (mapM, maximum)
+import Control.Monad.Reader hiding (mapM, maximum)
 import Control.Applicative
 import Control.Arrow (Kleisli(..))
 import Data.Bifunctor (first)
@@ -91,6 +91,7 @@ import Data.Foldable (foldrM, toList)
 import Data.Map (Map)
 import Data.HashMap.Strict (HashMap)
 import Data.Coerce
+import Unsafe.Coerce
 import Data.Maybe
 import Data.Monoid
 import Data.Ord
@@ -107,6 +108,7 @@ import Data.Proxy
 import qualified GHC.Generics as G
 import GHC.TypeLits
 import Control.Exception (IOException, catch)
+import Data.IORef
 
 import Expresso.Syntax
 import Expresso.Type
@@ -114,17 +116,17 @@ import Expresso.Pretty
 import Expresso.Utils (cata, (:*:)(..), K(..))
 import qualified Expresso.Parser as Parser
 
-{- import Control.Monad.Log hiding (Trace) -}
 import Control.Monad.Var hiding (Var)
 import qualified Control.Monad.Var as Var
 
 #if __GLASGOW_HASKELL__ <= 708
-import Prelude hiding (mapM, concat, elem, and, any)
+import Prelude hiding (mapM, maximum, concat, elem, and, any)
 import Data.Foldable
 import Data.Traversable
 #endif
 
 type f ~> g = forall x . f x -> g x
+type ApplicativeMonad f = (Applicative f, Monad f)
 type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 
 -- |
@@ -132,65 +134,66 @@ type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 -- A HashMap makes it easy to support record wildcards
 type Env f = HashMap Name (Thunk f)
 
--- | Basic implementation of MonadEval, which evaluates lazily
--- (TODO may not perform full call-by-need) and ignores most effects.
-{- newtype EvalM a = EvalM { runEvalT :: ExceptT String Identity a } -}
-{- deriving instance Functor EvalM -}
-{- deriving instance Applicative EvalM -}
-{- deriving instance Monad EvalM -}
-{- deriving instance MonadError String EvalM -}
-{- instance Alternative EvalM where -}
-  {- EvalM a <|> EvalM b = EvalM (a <|> b) -}
-  {- empty = EvalM empty -}
-{- instance MonadEval EvalM where -}
-  {- force = force_ -}
-  {- delay = return . Thunk -}
-  {- evalRef _ = toValue <$> pure () -}
-  {- trace msg = pure () -}
-  {- failed = throwError -}
 
 runEvalIO :: EvalIO a -> IO a
-{- runEvalIO = either error pure . runEvalM -}
 runEvalIO = runEvIO
 
--- FIXME try to recast EvalM as (Ev (State (Map Text (Value EvalM)))) or similar, replacing MonadVar with
--- class MonadMonoVar f where
---   type Var f :: *
---   type Val f :: *
---   newVar :: Val f -> Var f
---      etc.
--- instance MonadMonoVar (State (Map k v) where
---   type Var (State (Map k v)) = k
---   type Val (State (Map k v)) = v
---      etc.
+-- | Similar to MonadVar, but stores values of a single fixed type.
+class Monad f => MonadMonoVar (f :: * -> *) where
+  type Key f :: *
+  type Val f :: *
+  newMonoVar   :: Val f -> f (Key f)
+  readMonoVar  :: Key f -> f (Val f)
+  writeMonoVar :: Key f -> Val f -> f ()
+
+-- TODO move to strats-orphans...
+instance Enum a => Enum (Sum a) where
+  toEnum = Sum . toEnum
+  fromEnum = fromEnum . getSum
+
+-- TODO wrap key to make this safer...
+instance (ApplicativeMonad f, Ord k, Monoid k, Enum k) => MonadMonoVar (StateT (Map k v) f) where
+  type Key (StateT (Map k v) f) = k
+  type Val (StateT (Map k v) f) = v
+  newMonoVar v = (newKey <$> get) >>= \k -> modify' (Map.insert k v) >> pure k
+    where
+      newKey :: Map k v -> k
+      newKey = maybe mempty succ . safeMaximum . Map.keys
+
+      safeMaximum [] = Nothing
+      safeMaximum xs = Just $ maximum xs
+  readMonoVar k = get >>= maybe (error "readMonoVar: Missing key") pure . Map.lookup k
+  writeMonoVar k v = modify' (Map.insert k v)
+
+instance (ApplicativeMonad f, MonadMonoVar f) => MonadMonoVar (ExceptT e f) where
+  type Val (ExceptT e f) = Val f
+  type Key (ExceptT e f) = Key f
+  newMonoVar v = ExceptT $ fmap Right $ newMonoVar v
+  readMonoVar v = ExceptT $ fmap Right $ readMonoVar v
+  writeMonoVar k v = ExceptT $ fmap Right $ writeMonoVar k v
+
+instance (ApplicativeMonad f) => MonadMonoVar (Ev3 f) where
+  type Key (Ev3 f) = Sum Int
+  type Val (Ev3 f) = Maybe (Value (Ev3 f))
+  newMonoVar v = Ev3 $ newMonoVar v
+  readMonoVar v = Ev3 $ readMonoVar v
+  writeMonoVar k v = Ev3 $ writeMonoVar k v
 
 
-newtype EvalM a = EvalM { runEvalM_ :: ExceptT String Identity a }
-deriving instance Functor EvalM
-deriving instance Applicative EvalM
-deriving instance Monad EvalM
-deriving instance MonadError String EvalM
-instance Alternative EvalM where
-  EvalM a <|> EvalM b = EvalM (a <|> b)
-  empty = EvalM empty
-instance MonadEval EvalM where
-  force = force_
-  delay = return . Thunk
-  evalRef _ = toValue <$> pure ()
-  trace msg = pure ()
-  failed = throwError
-
-runEvalM = runExcept . runEvalM_
 
 
 
 
-
-
-class MonadTrace f where
+class Monad f => MonadTrace f where
   trace_ :: String -> f ()
+
+-- | Log using 'putStrLn'.
 instance MonadTrace IO where
   trace_ = putStrLn
+
+-- | Throw away log messages.
+instance MonadTrace Identity where
+  trace_ = const $ pure ()
 
 
 -- | Run in terms of
@@ -235,15 +238,61 @@ runEvIO = either error pure <=< runExceptT . runEv_
 runEvIO' :: Ev IO a -> ExceptT String IO a
 runEvIO' = runEv_
 
-{- runEvIO = either error pure . runEv -}
-
-{- runEv :: Ev a -> Either String a -}
-{- runEv = runIdentity . runExceptT . runEvalT -}
 
 
 
 
 
+
+newtype Ev3 (f :: * -> *) a = Ev3 { runEv3_ ::
+    ExceptT String
+      (StateT
+        (Map (Sum Int) (Maybe (Value (Ev3 f)))) f)
+      a
+      }
+instance MonadTrans Ev3 where
+  lift = Ev3 . liftExceptT . liftStateT
+    where
+      liftStateT :: Monad f => f a -> StateT s f a
+      liftExceptT :: Monad f => f a -> ExceptT e f a
+      liftStateT = lift
+      liftExceptT = lift
+deriving instance (Applicative f, Monad f) => Functor (Ev3 f)
+deriving instance (Applicative f, Monad f) => Applicative (Ev3 f)
+deriving instance (Applicative f, Monad f) => Monad (Ev3 f)
+deriving instance (Applicative f, Monad f) => Alternative (Ev3 f)
+
+
+instance (ApplicativeMonad f, MonadTrace f) => MonadEval (Ev3 f) where
+  trace x = lift $ trace_ x
+  failed x = Ev3 $ throwError x
+  evalRef x = error "TODO no evalRef"
+  delay k = do
+    v <- newMonoVar Nothing
+    pure $ Thunk $ do
+      cur <- readMonoVar v
+      case cur of
+        Just x -> pure x
+        Nothing -> do
+          r <- k
+          writeMonoVar v $ Just r
+          pure r
+  force (Thunk k) = k
+
+runEv3 :: (Applicative f, Monad f, MonadError String f) => Ev3 f a -> f a
+runEv3 = either throwError pure <=< runEv3Either
+
+runEv3Either :: Monad m => Ev3 m a -> m (Either String a)
+runEv3Either = flip evalStateT mempty . runExceptT . runEv3_
+
+runEvalM :: EvalM a -> Either String a
+runEvalM = runIdentity . runEv3Either
+
+
+
+
+
+type EvalM  = Ev3 Identity
 type EvalIO = Ev IO
 
 type ValueIO = Value EvalIO
@@ -1204,11 +1253,11 @@ instance MonadEval f => FromValue1 (Kleisli f) where
   fv x = Kleisli $ fromValue1 x
 
 
-newtype Unsafe a b = Unsafe { runUnsafe :: a -> b }
+{- newtype Unsafe a b = Unsafe { runUnsafe :: a -> b } -}
 
-instance FromValue1 Unsafe where
-  type Arr Unsafe = EvalM
-  fv x = Unsafe $ either error id . runEvalM <$> fromValue1 x
+{- instance FromValue1 Unsafe where -}
+  {- type Arr Unsafe = EvalM -}
+  {- fv x = Unsafe $ either error id . runEvalM <$> fromValue1 x -}
 
 
 fromValue1 :: (ToValue a, FromValue r, MonadEval f) => Value f -> a -> f r
