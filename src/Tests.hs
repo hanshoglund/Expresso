@@ -464,3 +464,10 @@ illTyped str = testCase str $ do
 
 assertTrue = return ()
 
+-- TODO
+-- More cleanup: doc stuff, rename unsafeFromV...
+-- Add/test typeOfValue
+-- Add/test ref prim
+-- separate user errors from compile/TC errors...
+-- Work on static expressions?
+-- Add Tim's suggestions

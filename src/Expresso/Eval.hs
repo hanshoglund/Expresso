@@ -298,7 +298,7 @@ type Thunk' = Thunk EvalM
 type Env'   = Env   EvalM
 
 type Thunk = ThunkF ()
-newtype ThunkF hof qq = Thunk { force_ :: qq (ValueF hof qq) }
+newtype ThunkF hof f = Thunk { force_ :: f (ValueF hof f) }
 
 
 hoistThunk :: Functor f => (f ~> g) -> ThunkF Void f -> ThunkF Void g
@@ -336,10 +336,10 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   trace    :: String -> f ()
   failed   :: String -> f a
 
-valueToThunk :: Applicative qq => Value qq -> Thunk qq
+valueToThunk :: Applicative f => Value f -> Thunk f
 valueToThunk = Thunk . pure
 
-instance Show (Thunk qq) where
+instance Show (Thunk f) where
     show _ = "<Thunk>"
 
 type FirstOrderValue = ValueF Void
@@ -347,16 +347,16 @@ type FirstOrderValue = ValueF Void
 type Value = ValueF ()
 pattern VLam x = VLamF x ()
 
-data ValueF hof qq
-  = VLamF     !(ThunkF hof qq -> qq (ValueF hof qq)) hof
+data ValueF hof f
+  = VLamF    !(ThunkF hof f -> f (ValueF hof f)) hof
   | VInt     !Integer
   | VDbl     !Double
   | VBool    !Bool
   | VChar    !Char
   {- | VMaybe   !(Maybe Value) -}
-  | VList    ![ValueF hof qq] -- lists are strict
-  | VRecord  !(HashMap Label (ThunkF hof qq)) -- field order no defined
-  | VVariant !Label !(ThunkF hof qq)
+  | VList    ![ValueF hof f] -- lists are strict
+  | VRecord  !(HashMap Label (ThunkF hof f)) -- field order no defined
+  | VVariant !Label !(ThunkF hof f)
 
 
 instance Show Value' where
@@ -366,7 +366,7 @@ instance Show Value' where
 
 
 -- | This does *not* evaluate deeply
-ppValue :: Value qq -> Doc
+ppValue :: Value f -> Doc
 ppValue VLamF{}     = "<Lambda>"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
@@ -381,7 +381,7 @@ ppValue (VRecord m) = bracesList $ map ppEntry $ HashMap.keys m
     ppEntry l = text l <+> "=" <+> "<Thunk>"
 ppValue (VVariant l _) = text l <+> "<Thunk>"
 
-ppParensValue :: Value qq -> Doc
+ppParensValue :: Value f -> Doc
 ppParensValue v =
     case v of
         {- VMaybe{}   -> parens $ ppValue v -}
@@ -389,7 +389,7 @@ ppParensValue v =
         _          -> ppValue v
 
 -- | This evaluates deeply
-ppValue' :: MonadEval qq => Value qq -> qq Doc
+ppValue' :: MonadEval f => Value f -> f Doc
 ppValue' (VRecord m) = (bracesList . map ppEntry . List.sortBy (comparing fst) . HashMap.toList)
                            <$> mapM (force >=> ppValue') m
   where
@@ -397,26 +397,26 @@ ppValue' (VRecord m) = (bracesList . map ppEntry . List.sortBy (comparing fst) .
 ppValue' (VVariant l t) = (text l <+>) <$> (force >=> ppParensValue') t
 ppValue' v = return $ ppValue v
 
-ppParensValue' :: MonadEval qq => Value qq -> qq Doc
+ppParensValue' :: MonadEval f => Value f -> f Doc
 ppParensValue' v =
     case v of
         {- VMaybe{}   -> parens <$> ppValue' v -}
         VVariant{} -> parens <$> ppValue' v
         _          -> ppValue' v
 
-extractChar :: Value qq -> Maybe Char
+extractChar :: Value f -> Maybe Char
 extractChar (VChar c) = Just c
 extractChar _ = Nothing
 
 
 
 
-eval :: forall qq . MonadEval qq => Env qq -> Exp -> qq (Value qq)
+eval :: forall f . MonadEval f => Env f -> Exp -> f (Value f)
 eval env e = cata alg e env
   where
-    alg :: (ExpF Name Bind Type :*: K Pos) (Env qq -> qq (Value qq))
-        -> Env qq
-        -> qq (Value qq)
+    alg :: (ExpF Name Bind Type :*: K Pos) (Env f -> f (Value f))
+        -> Env f
+        -> f (Value f)
     alg (EVar v :*: _)         env = lookupValue env v >>= force
     alg (EApp f x :*: K pos)   env = do
         f' <- f env
@@ -432,11 +432,11 @@ eval env e = cata alg e env
     alg (EPrim p :*: K pos)    _   = pure $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
-evalLam :: MonadEval qq => Env qq -> Bind Name -> (Env qq -> qq (Value qq)) -> qq (Value qq)
+evalLam :: MonadEval f => Env f -> Bind Name -> (Env f -> f (Value f)) -> f (Value f)
 evalLam env b e = return $ VLam $ \x ->
     bind env b x >>= e
 
-evalApp :: MonadEval qq => Pos -> Value qq -> Thunk qq -> qq (Value qq)
+evalApp :: MonadEval f => Pos -> Value f -> Thunk f -> f (Value f)
 evalApp _   (VLam f)   t  = f t
 evalApp pos fv         _  =
     failed $ show pos ++ " : Expected a function, but got: " ++
@@ -444,9 +444,9 @@ evalApp pos fv         _  =
 
 -- | Look up a primitive.
 --
--- Note: return type is not in qq, but the value returned may still be a function with
--- effects in qq (e.g. a VLam).
-evalPrim :: forall qq . MonadEval qq => Pos -> Prim -> Value qq
+-- Note: return type is not in a monad, but the value returned may still be a function with
+-- effects some type @f@.
+evalPrim :: forall f . MonadEval f => Pos -> Prim -> Value f
 evalPrim pos p = case p of
     Trace     -> VLam $ \s -> do
         msg <- fromValue' s
@@ -547,7 +547,7 @@ evalPrim pos p = case p of
 
     ListEmpty     -> VList []
     ListNull      -> VLam $ \xs ->
-        (VBool . (null :: [Value qq] -> Bool)) <$> (force >=> fromValueL return) xs
+        (VBool . (null :: [Value f] -> Bool)) <$> (force >=> fromValueL return) xs
     ListCons      -> VLam $ \x -> return $ VLam $ \xs ->
         VList <$> ((:) <$> force x <*> (force >=> fromValueL return) xs)
     ListAppend    -> VLam $ \xs -> return $ VLam $ \ys ->
@@ -557,7 +557,7 @@ evalPrim pos p = case p of
         let g a b = do g' <- evalApp pos f (Thunk $ return a)
                        evalApp pos g' (Thunk $ return b)
         z'  <- force z
-        xs' <- (force >=> fromValueL return) xs -- :: qq [Value qq]
+        xs' <- (force >=> fromValueL return) xs -- :: f [Value f]
         foldrM g z' xs'
     RecordExtend l   -> VLam $ \v -> return $ VLam $ \r ->
         (VRecord . HashMap.insert l v) <$> (force >=> fromValueRTh) r
@@ -582,7 +582,7 @@ evalPrim pos p = case p of
 
 
 -- non-strict bind
-bind :: MonadEval qq => Env qq -> Bind Name -> Thunk qq -> qq (Env qq)
+bind :: MonadEval f => Env f -> Bind Name -> Thunk f -> f (Env f)
 bind env b t = case b of
     Arg n -> return $ HashMap.insert n t env
     _     -> bind' env b t
@@ -605,7 +605,7 @@ lookupValue env n = maybe err return $ HashMap.lookup n env
   where
     err = failed $ "Not found: " ++ show n
 
-failOnValues :: MonadEval f => Pos -> [Value qq] -> f a
+failOnValues :: MonadEval f => Pos -> [Value f] -> f a
 failOnValues pos vs = failed $ show pos ++ " : Unexpected value(s) : " ++
                                    show (parensList (map ppValue vs))
 
@@ -874,7 +874,7 @@ renderADT (ADT outer)
         inner
 
 
-renderADTValue :: Applicative qq => ADT (Value qq) -> Value qq
+renderADTValue :: Applicative f => ADT (Value f) -> Value f
 renderADTValue (ADT outer)
   = foldOrSingle
     -- TODO clean up this error printing...
@@ -899,10 +899,13 @@ renderADTValue (ADT outer)
 --     runParser = getCompose
 
 -- FIXME when composed with EvalM, this concatenates error messages...
-type Parser qq f = ReaderT (Value qq) f
-_Parser = ReaderT
-runParser = runReaderT
+type Parser g f = ReaderT (Value g) f
 
+type Parser' f = Parser f f
+
+_Parser = ReaderT
+
+runParser = runReaderT
 
 
 intoRecord :: (Applicative f, MonadState RecNames f) => f ()
@@ -953,10 +956,10 @@ fixADNames x = evalState (go x) RecNamesInit
     go' x@Coprod{} = go x
     go' x@Constructor{} = go x
 
-renderADParser :: MonadEval f => AD Var (Parser f f) a -> Parser f f a
+renderADParser :: MonadEval f => AD Var (Parser' f) a -> Parser' f a
 renderADParser x = evalState (go x) 0
   where
-    go :: forall f a . MonadEval f => AD Var (Parser f f) a -> State Int (Parser f f a)
+    go :: forall f a . MonadEval f => AD Var (Parser' f) a -> State Int (Parser' f a)
     go Initial = pure empty
     go (Coprod f g x y) = liftA2 (<|>) (fmap f <$> go x) (fmap g <$> go y)
     go (Constructor k a) = do
@@ -967,7 +970,7 @@ renderADParser x = evalState (go x) 0
           runParser p y
         _ -> failed $ "Bad variant, wanted " <> k <> " got (" <> show (ppValue x) <> ")"
 
-    go' :: forall f x a . MonadEval f => AD x (Parser f f) a -> State Int (Parser f f a)
+    go' :: forall f x a . MonadEval f => AD x (Parser' f) a -> State Int (Parser' f a)
     go' (Singleton p) = pure p
     go' (Terminal x) = pure x
     go' (Prod f x y) = do
@@ -1377,7 +1380,7 @@ instance
     fromValue v           = failfromValue "VString" v
       where
 
-getC :: MonadEval f => Value qq -> f Char
+getC :: MonadEval f => Value g -> f Char
 getC (VChar c) = pure c
 getC v = failfromValue "VString" v
 
@@ -1413,7 +1416,7 @@ instance (FromValue a, FromValue b) => FromValue (a, b)
 
 
 
-fromValueL :: MonadEval m => (Value qq -> m b) -> Value qq -> m [b]
+fromValueL :: MonadEval f => (Value g -> f b) -> Value g -> f [b]
 fromValueL fromValue (VList xs) = mapM fromValue xs
 fromValueL _         v          = failfromValue "VList" v
 
@@ -1423,7 +1426,7 @@ fromValueL _         v          = failfromValue "VList" v
 fromValueRTh (VRecord m) = return m
 fromValueRTh v           = failfromValue "VRecord" v
 
-failfromValue :: MonadEval f => String -> Value qq -> f a
+failfromValue :: MonadEval f => String -> Value g -> f a
 failfromValue desc v = failed $ "Expected a " ++ desc ++
     ", but got: " ++ show (ppValue v)
 
