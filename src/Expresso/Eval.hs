@@ -37,46 +37,46 @@
 
 ------------------------------------------------------------
 --
--- A lazy evaluator.
---
--- The front-end syntax is simple, so we evaluate it directly.
+-- A set of evaluators.
 --
 module Expresso.Eval(
-    eval
+  -- * Utility (TODO move)
+    ApplicativeMonad
+  , ApplicativeMonadError
+  , MonadTrace(..)
+
+  -- * Eval, bind, pretty-pring
+  , Env
+  , Env'
+  , Thunk
+  , Thunk'
+  , ThunkF(..)
+  , Value
+  , Value'
+  , ValueF(..)
+  , eval
   , bind
   , ppValue
   , ppValue'
 
-  , EvalM
-  , EvalIO
+  -- * Marshalling between Expresso and Haskell types
+  -- $generics
+  , HasType(..)
+  , FromValue(..)
+  , ToValue(..)
+  , fromValue1
+  , fromValue2
+  , FromValue1(..)
+
+  -- ** MonadEval class, evaluation effects
+  , MonadEval(..)
   , EvalT
   , EvalPrimT
   , runEvalM
   , runEvalIO
   , runEvIO'
-  , ValueF(..)
-  , ThunkF(..)
-  , Env
-  , Value
-  , Thunk
-  , Env'
-  , Value'
-  , Thunk'
-
-
-  , HasType(..)
-  , FromValue(..)
-  , fromValue1
-  , fromValue2
-  , ToValue(..)
-  , MonadEval(..)
-
-  -- TODO testing
-  , V1(..)
-  , V2(..)
-  , V3(..)
-  , V4(..)
-  , roundTrip
+  , EvalM
+  , EvalIO
 )
 where
 
@@ -181,7 +181,7 @@ instance (ApplicativeMonad f) => MonadMonoVar (EvalT f) where
 
 
 
--- | Similar to 'MonadWriter String', but allows for more instances (and a separate namespace from Writer).
+-- | Similar to 'MonadWriter' 'String', but allows for more instances (and a separate namespace from 'MonadWriter').
 class Monad f => MonadTrace f where
   trace_ :: String -> f ()
 
@@ -194,9 +194,9 @@ instance MonadTrace Identity where
   trace_ = const $ pure ()
 
 
--- | Run evaluation in terms of MonadTrace and MonadVar.
+-- | Run evaluation in terms of 'MonadTrace' and 'MonadVar'.
 --
--- This is faster than EvalT, but only allows for IO and ST-based instances.
+-- This is faster than EvalT, but only allows for 'IO' and 'ST'-based instances.
 newtype EvalPrimT (f :: * -> *) a = EvalPrimT { runEvalPrimT_ :: ExceptT String f a }
 
 deriving instance MonadTrans EvalPrimT
@@ -239,7 +239,7 @@ runEvIO' = runEvalPrimT_
 
 
 
--- | Run evaluation in terms of MonadTrace. If you don't care about 'trace', see 'EvalM'.
+-- | Run evaluation in terms of 'MonadTrace'. If you don't care about 'trace', see 'EvalM'.
 newtype EvalT (f :: * -> *) a = EvalT { runEvalT_ ::
     ExceptT String
       (StateT
@@ -325,15 +325,22 @@ hoistValue f = go
 -- overloadable interpretation of effects in the source
 -- language.
 --
--- Along with FromValue and ToValue these give you an
+-- Along with 'FromValue' and 'ToValue' these give you an
 -- interpretation of Expresso functions as Haskell
--- functions.
+-- functions. Built on top of this is 'FromValue1' which maps
+-- Expresso functions into a morphism in Hask.
 --
 class (Applicative f, Monad f, Alternative f) => MonadEval f where
+  -- | Force a thunk.
   force    :: Thunk f -> f (Value f)
+  -- | Delay computation of a value, which can be evaluated using 'force'.
   delay    :: f (Value f) -> f (Thunk f)
+  -- | Look up a reference.
+  --   Called when evaluating 'ERef' expressions.
   evalRef  :: String -> f (Value f)
+  -- | Trace effect. Called when evaluating the 'Trace' primitive.
   trace    :: String -> f ()
+  -- | Trace effect. Called when evaluating the 'ErrorPrim' primitive.
   failed   :: String -> f a
 
 valueToThunk :: Applicative f => Value f -> Thunk f
@@ -683,6 +690,28 @@ recordValues = List.sortBy (comparing fst) . HashMap.toList
 
 
 
+-- $generics
+--
+-- The classes 'HasType', 'FromValue' and 'ToValue' can be generically derived.
+--
+-- @
+-- data V2 a b = V2 { a :: a, b :: b } deriving (GHC.Generics.Generic, Show)
+--
+-- instance (HasType a, HasType b) => HasType (V2 a b)
+-- instance (ToValue a, ToValue b) => ToValue (V2 a b)
+-- instance (FromValue a, FromValue b) => FromValue (V2 a b)
+-- @
+--
+-- Unfortunately due to limitations in GHCs generics, we can't easily derive
+-- 'HasType' for recursive Haskell types (including mutually recursive types).
+--
+-- For example this will loop:
+-- @
+-- data FooBar = Foo | Bar Foo deriving (Generic)
+--
+-- instance HasType FooBar
+-- @
+
 
 -- |
 -- How to marshall Haskell contructors and selectors into Expresso types.
@@ -695,7 +724,6 @@ defaultOptions = Options
 
 
 -- | Haskell types with a corresponding Expresso type.
--- TODO generalize proxy?
 class HasType a where
     typeOf :: HasType a => Proxy a -> Type
     default typeOf :: (G.Generic a, GHasType (G.Rep a)) => Proxy a -> Type

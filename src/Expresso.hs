@@ -31,7 +31,7 @@ import Control.Monad.Except (ExceptT(..), runExceptT, throwError)
 import Data.Monoid
 import Control.Applicative
 
-import Expresso.Eval (Env, EvalM, FromValue(..), ValueF(..), Value, Value')
+import Expresso.Eval (Env, EvalM, FromValue(..), Value, Value')
 import Expresso.TypeCheck (TIState, initTIState)
 import Expresso.Pretty (render)
 import Expresso.Syntax
