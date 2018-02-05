@@ -197,17 +197,17 @@ instance MonadTrace Identity where
 -- | Run evaluation in terms of MonadTrace and MonadVar.
 --
 -- This is faster than EvalT, but only allows for IO and ST-based instances.
-newtype Ev (f :: * -> *) a = Ev { runEv_ :: ExceptT String f a }
+newtype EvalPrimT (f :: * -> *) a = EvalPrimT { runEvalPrimT_ :: ExceptT String f a }
 
-deriving instance MonadTrans Ev
-deriving instance (Applicative f, Monad f) => Functor (Ev f)
-deriving instance (Applicative f, Monad f) => Applicative (Ev f)
-deriving instance (Applicative f, Monad f) => Monad (Ev f)
-deriving instance (Applicative f, Monad f) => Alternative (Ev f)
+deriving instance MonadTrans EvalPrimT
+deriving instance (Applicative f, Monad f) => Functor (EvalPrimT f)
+deriving instance (Applicative f, Monad f) => Applicative (EvalPrimT f)
+deriving instance (Applicative f, Monad f) => Monad (EvalPrimT f)
+deriving instance (Applicative f, Monad f) => Alternative (EvalPrimT f)
 
-instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (Ev f) where
+instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (EvalPrimT f) where
   trace x = lift $ trace_ x
-  failed x = Ev $ throwError x
+  failed x = EvalPrimT $ throwError x
   evalRef x = error "TODO no evalRef"
   delay k = do
     v <- lift $ newVar Nothing
@@ -221,21 +221,21 @@ instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (Ev f) where
           pure r
   force (Thunk k) = k
 
-runEv :: (Applicative f, Monad f, MonadError String f) => Ev f a -> f a
-runEv = either throwError pure <=< runExceptT . runEv_
+runEvalPrimT :: (Applicative f, Monad f, MonadError String f) => EvalPrimT f a -> f a
+runEvalPrimT = either throwError pure <=< runExceptT . runEvalPrimT_
 
-runEvST :: (forall s . Ev (ST s) a) -> (Either String a)
-runEvST x = runST $ runExceptT $ runEv_ x
+runEvalPrimST :: (forall s . EvalPrimT (ST s) a) -> (Either String a)
+runEvalPrimST x = runST $ runExceptT $ runEvalPrimT_ x
 
 
 runEvalIO :: EvalIO a -> IO a
 runEvalIO = runEvIO
 
-runEvIO :: Ev IO a -> IO a
-runEvIO = either error pure <=< runExceptT . runEv_
+runEvIO :: EvalPrimT IO a -> IO a
+runEvIO = either error pure <=< runExceptT . runEvalPrimT_
 
-runEvIO' :: Ev IO a -> ExceptT String IO a
-runEvIO' = runEv_
+runEvIO' :: EvalPrimT IO a -> ExceptT String IO a
+runEvIO' = runEvalPrimT_
 
 
 
@@ -291,7 +291,7 @@ runEvalM = runIdentity . runEvalTEither
 
 
 type EvalM  = EvalT Identity
-type EvalIO = Ev IO
+type EvalIO = EvalPrimT IO
 
 type ValueIO = Value EvalIO
 type ThunkIO = Thunk EvalIO
