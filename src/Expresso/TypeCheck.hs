@@ -339,7 +339,7 @@ tcRho = cata alg
             e2 mty
     alg (ERef e annT :*: K pos) mty = do
         annT  <- instWildcards annT
-        _TRef <$> instSigma pos annT mty
+        instSigma pos annT mty
     alg (EAnn e annT :*: K pos) mty = do
         annT  <- instWildcards annT
         checkSigma pos e annT

@@ -82,6 +82,7 @@ module Expresso.Eval(
 
   -- * References
   , Ref(..)
+  , Referable(..)
 )
 where
 
@@ -100,6 +101,7 @@ import Data.Coerce
 import Data.Maybe
 import Data.Monoid
 import Data.Ord
+import Data.Text (Text)
 import qualified Data.Map as Map
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.List as List
@@ -213,7 +215,7 @@ deriving instance (Applicative f, Monad f) => Alternative (EvalPrimT f)
 instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (EvalPrimT f) where
   trace x = lift $ trace_ x
   failed x = EvalPrimT $ throwError x
-  evalRef x = error "TODO no evalRef"
+  fetchRef x = error "TODO no fetchRef"
   delay k = do
     v <- lift $ newVar Nothing
     pure $ Thunk $ do
@@ -267,7 +269,7 @@ deriving instance (Applicative f, Monad f) => Alternative (EvalT f)
 instance (ApplicativeMonad f, MonadTrace f) => MonadEval (EvalT f) where
   trace x = lift $ trace_ x
   failed x = EvalT $ throwError x
-  evalRef x = error "TODO no evalRef"
+  fetchRef x = error "TODO no fetchRef"
   delay k = do
     v <- newMonoVar Nothing
     pure $ Thunk $ do
@@ -320,7 +322,6 @@ hoistValue f = go
     go (VList xs) = VList (go <$> xs)
     go (VRecord xs) = VRecord (goT <$> xs)
     go (VVariant l t) = VVariant l (goT t)
-    go (VRef l t) = VVariant l (goT t)
 
     goT = hoistThunk f
 
@@ -343,7 +344,7 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   delay    :: f (Value f) -> f (Thunk f)
   -- | Look up a reference.
   --   Called when evaluating 'ERef' expressions.
-  evalRef  :: String -> f Exp
+  fetchRef  :: String -> f Exp
   -- | Trace effect. Called when evaluating the 'Trace' primitive.
   trace    :: String -> f ()
   -- | Trace effect. Called when evaluating the 'ErrorPrim' primitive.
@@ -366,10 +367,11 @@ data ValueF h f
   | VDbl     !Double
   | VBool    !Bool
   | VChar    !Char
+  | VText    !Text
+  | VBlob    !String (f LBS.ByteString) -- hash and value
   | VList    ![ValueF h f] -- lists are strict
   | VRecord  !(HashMap Label (ThunkF h f)) -- field order no defined
   | VVariant !Label !(ThunkF h f)
-  | VRef     !String !(ThunkF h f)
 
 instance Show Value' where
   -- TODO this doesn't just work for EvalM, but for any f where we have
@@ -380,7 +382,6 @@ instance Show Value' where
 -- | This does /not/ evaluate deeply
 ppValue :: Value f -> Doc
 ppValue VLamF{}     = "<Lambda>"
-ppValue (VRef r th) = "<Ref " <> string r <> ">"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
 ppValue (VBool b)   = if b then "True" else "False"
@@ -442,12 +443,14 @@ eval env e = cata alg e env
         env' <- bind env b t
         e2 env'
     alg (ERef r _ :*: _)     _   = do
-      exp <- evalRef r
+      exp <- fetchRef r
+      -- FIXME cache ref...
       -- Referenced expressions can't have free variables
-      th <- delay $ eval mempty exp
-      pure  $ VRef r th
+      eval mempty exp
     alg (EPrim p :*: K pos)    _   = pure $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
+
+{- evalWithCache r env exp = eval env exp -}
 
 evalLam :: MonadEval f => Env f -> Bind Name -> (Env f -> f (Value f)) -> f (Value f)
 evalLam env b e = return $ VLam $ \x ->
@@ -1360,7 +1363,6 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
         go (VList x) = VList (go <$> x)
         go (VRecord x) = VRecord (goT <$> x)
         go (VVariant l x) = VVariant l (goT x)
-        go (VRef l x) = VRef l (goT x)
 
         goT (Thunk f) = Thunk (go <$> f)
 
@@ -1375,7 +1377,6 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
         go (VList x) = VList (go <$> x)
         go (VRecord x) = VRecord (goT <$> x)
         go (VVariant l x) = VVariant l (goT x)
-        go (VRef l x) = VRef l (goT x)
 
         goT (Thunk f) = Thunk (go <$> f)
 
@@ -1417,16 +1418,18 @@ instance ToValue () where
 instance HasType LBS.ByteString where
   typeOf _ = _TBlob
 instance ToValue LBS.ByteString where
-  toValue = error "TODO ByteString"
+  toValue x = VBlob (error "TODO hash ByteString") (pure x)
 instance FromValue LBS.ByteString where
-  fromValue = error "TODO ByteString"
+  fromValue (VBlob h th) = th
+  fromValue v            = failfromValue "VBlob" v
 
 instance HasType T.Text where
   typeOf _ = _TText
 instance ToValue T.Text where
-  toValue = error "TODO Text"
+  toValue = VText
 instance FromValue T.Text where
-  fromValue = error "TODO Text"
+  fromValue (VText b) = return b
+  fromValue v         = failfromValue "VText" v
 
 instance
 #if __GLASGOW_HASKELL__ > 708
@@ -1537,25 +1540,30 @@ showR (Right x) = show x
 showR (Left e) = "<<Error:" <> show e <> ">>"
 
 
--- | A remote reference to a value of some type.
+-- NOTE: In Expresso, all expressions and normalized values are serializable.
 --
--- TODO syntax, e.g. (#foobar : Text)
--- TODO make sure only monom types are admitted
--- TODO test a la runWithStore below
--- TODO add primitive
---
--- @
--- runWithStore [("foo",_TText "bar")] $ runEvalT $ (eval mempty (Fix (ERef "foo" _TBlob :*: K dummyPos))) >>= fromValue
---    Ref (Left "foo") :: Ref Text
--- @
---
-newtype Ref (a :: *) = Ref { getRef :: Either String a } deriving (G.Generic, Show)
+-- This allow us to obtain the hash to the expression of any value, including
+-- unevaluated thunks. Due to the way the evaluator currently works, we limit
+-- ourselves to blobs.
+
+
+-- |
+-- This special type allow us to marhall primitive values as the hash of their
+-- expression tree.
+newtype Ref (a :: *) = Ref { getRef :: String } deriving (G.Generic, Show)
+
+class FromValue a => Referable a where
+  toRef :: MonadEval f => Value f -> f (Ref a)
+
+instance Referable LBS.ByteString where
+  toRef (VBlob h _) = pure $ Ref h
+  toRef v = failfromValue "VBlob" v
 
 instance HasType a => HasType (Ref a) where
   typeOf = typeOf . inside
 
-{- instance FromValue a => FromValue (Ref a) where -}
-  {- fromValue  -}
+instance (Referable a, FromValue a) => FromValue (Ref a) where
+  fromValue = toRef
 
 {- instance ToValue a => ToValue (Ref a) where -}
   {- toValue r@(Ref x) = either (error "") id $ runEvalM $ eval mempty (Fix $ ERef x ty :*: K dummyPos) -}
