@@ -63,6 +63,7 @@ data TypeF r
   | TFunF r r
   {- | TMaybeF r -}
   | TListF r
+  | TRefF r
 
   | TRecordF r
   | TVariantF r
@@ -148,6 +149,8 @@ _TFun t1 t2 = inj (TFunF t1 t2)
 {- _TMaybe t = inj (TMaybeF t) -}
 pattern TList t            <- (proj -> (TListF t))
 _TList t = inj (TListF t)
+pattern TRef t            <- (proj -> (TRefF t))
+_TRef t = inj (TRefF t)
 pattern TRecord t          <- (proj -> (TRecordF t))
 _TRecord t = inj (TRecordF t)
 pattern TVariant t         <- (proj -> (TVariantF t))

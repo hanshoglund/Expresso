@@ -320,6 +320,7 @@ hoistValue f = go
     go (VList xs) = VList (go <$> xs)
     go (VRecord xs) = VRecord (goT <$> xs)
     go (VVariant l t) = VVariant l (goT t)
+    go (VRef l t) = VVariant l (goT t)
 
     goT = hoistThunk f
 
@@ -342,7 +343,7 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   delay    :: f (Value f) -> f (Thunk f)
   -- | Look up a reference.
   --   Called when evaluating 'ERef' expressions.
-  evalRef  :: String -> f (Value f)
+  evalRef  :: String -> f Exp
   -- | Trace effect. Called when evaluating the 'Trace' primitive.
   trace    :: String -> f ()
   -- | Trace effect. Called when evaluating the 'ErrorPrim' primitive.
@@ -368,7 +369,7 @@ data ValueF h f
   | VList    ![ValueF h f] -- lists are strict
   | VRecord  !(HashMap Label (ThunkF h f)) -- field order no defined
   | VVariant !Label !(ThunkF h f)
-
+  | VRef     !String !(ThunkF h f)
 
 instance Show Value' where
   -- TODO this doesn't just work for EvalM, but for any f where we have
@@ -379,6 +380,7 @@ instance Show Value' where
 -- | This does /not/ evaluate deeply
 ppValue :: Value f -> Doc
 ppValue VLamF{}     = "<Lambda>"
+ppValue (VRef r th) = "<Ref " <> string r <> ">"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
 ppValue (VBool b)   = if b then "True" else "False"
@@ -439,7 +441,11 @@ eval env e = cata alg e env
         t    <- delay $ e1 env
         env' <- bind env b t
         e2 env'
-    alg (ERef x _ :*: pos)     _   = evalRef x
+    alg (ERef r _ :*: _)     _   = do
+      exp <- evalRef r
+      -- Referenced expressions can't have free variables
+      th <- delay $ eval mempty exp
+      pure  $ VRef r th
     alg (EPrim p :*: K pos)    _   = pure $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
@@ -1037,10 +1043,10 @@ renderADParser x = evalState (go x) 0
               Just th -> do
                 v <- force th
                 runParser p v
-              _ -> fail k m
+              _ -> failRec k m
             _ -> failed $ "Not a record" -- FIXME, wanted '"<> k <>"', got (" <> (showR $ runEvalM $ ppValue' x) <> ")"
       where
-        fail k m = failed $ "Bad record" -- FIXME , wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
+        failRec k m = failed $ "Bad record" -- FIXME , wanted '" <> k <> "', got rec with keys " <> show (HashMap.keys m)
 
     go' x@Initial{} = go x
     go' x@Coprod{} = go x
@@ -1354,6 +1360,7 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
         go (VList x) = VList (go <$> x)
         go (VRecord x) = VRecord (goT <$> x)
         go (VVariant l x) = VVariant l (goT x)
+        go (VRef l x) = VRef l (goT x)
 
         goT (Thunk f) = Thunk (go <$> f)
 
@@ -1368,6 +1375,7 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
         go (VList x) = VList (go <$> x)
         go (VRecord x) = VRecord (goT <$> x)
         go (VVariant l x) = VVariant l (goT x)
+        go (VRef l x) = VRef l (goT x)
 
         goT (Thunk f) = Thunk (go <$> f)
 
@@ -1530,7 +1538,18 @@ showR (Left e) = "<<Error:" <> show e <> ">>"
 
 
 -- | A remote reference to a value of some type.
-newtype Ref (a :: *) = Ref { getRef :: String } deriving (G.Generic, Show)
+--
+-- TODO syntax, e.g. (#foobar : Text)
+-- TODO make sure only monom types are admitted
+-- TODO test a la runWithStore below
+-- TODO add primitive
+--
+-- @
+-- runWithStore [("foo",_TText "bar")] $ runEvalT $ (eval mempty (Fix (ERef "foo" _TBlob :*: K dummyPos))) >>= fromValue
+--    Ref (Left "foo") :: Ref Text
+-- @
+--
+newtype Ref (a :: *) = Ref { getRef :: Either String a } deriving (G.Generic, Show)
 
 instance HasType a => HasType (Ref a) where
   typeOf = typeOf . inside
