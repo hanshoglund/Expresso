@@ -13,6 +13,8 @@
 
 module Expresso.Syntax where
 
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text as T
 import Expresso.Type
 import Expresso.Utils
 
@@ -49,6 +51,9 @@ data Prim
   | Bool Bool
   | Char Char
   | String String
+  | Text T.Text
+  | Blob LBS.ByteString
+
   | Show
   | Trace
   | ErrorPrim
@@ -69,6 +74,11 @@ data Prim
   | FixPrim
   | FwdComp
   | BwdComp
+
+  | PackBlob
+  | UnpackBlob
+  | PackText
+  | UnpackText
 
   {-  | JustPrim -}
   {-  | NothingPrim -}

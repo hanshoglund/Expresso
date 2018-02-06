@@ -455,6 +455,8 @@ tcPrim pos prim = annotate pos $ case prim of
   Bool{}                 -> _TBool
   Char{}                 -> _TChar
   String{}               -> _TList _TChar
+  Text{}                 -> _TText
+  Blob{}                 -> _TBlob
   Show                   ->
     -- use an Eq constraint, to prevent attempting to show lambdas
     let a = newTyVar (CStar CEq) 'a'
@@ -523,6 +525,12 @@ tcPrim pos prim = annotate pos $ case prim of
     in _TForAll [a] $ _TFun _TBool
                                 (_TFun (_TVar a)
                                       (_TFun (_TVar a) (_TVar a)))
+
+  PackBlob               -> _TFun (_TList _TInt) _TBlob
+  UnpackBlob             -> _TFun _TBlob (_TList _TInt)
+  PackText               -> _TFun (_TList _TChar) _TText
+  UnpackText             -> _TFun  _TText (_TList _TChar)
+
   ListEmpty              ->
     let a = newTyVar CNone 'a'
     in _TForAll [a] $ _TList (_TVar a)

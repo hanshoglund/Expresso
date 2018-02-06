@@ -1548,7 +1548,7 @@ showR (Left e) = "<<Error:" <> show e <> ">>"
 
 
 -- |
--- This special type allow us to marhall primitive values as the hash of their
+-- This special type allow us to marhall values as the hash of their
 -- expression tree.
 newtype Ref (a :: *) = Ref { getRef :: String } deriving (G.Generic, Show)
 
