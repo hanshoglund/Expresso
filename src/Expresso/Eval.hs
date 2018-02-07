@@ -319,6 +319,8 @@ hoistValue f = go
     go (VDbl x) = VDbl x
     go (VChar x) = VChar x
     go (VBool x) = VBool x
+    go (VText x) = VText x
+    go (VBlob r t) = VBlob r (f t)
     go (VList xs) = VList (go <$> xs)
     go (VRecord xs) = VRecord (goT <$> xs)
     go (VVariant l t) = VVariant l (goT t)
@@ -384,6 +386,8 @@ ppValue :: Value f -> Doc
 ppValue VLamF{}     = "<Lambda>"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
+ppValue (VText d)   = text $ T.unpack d
+ppValue (VBlob d t) = "<Blob>"
 ppValue (VBool b)   = if b then "True" else "False"
 ppValue (VChar c)   = text $ c : []
 {- ppValue (VMaybe mx) = maybe "Nothing" (\v -> "Just" <+> ppParensValue v) mx -}
@@ -481,9 +485,31 @@ evalPrim pos p = case p of
     Bool b        -> VBool b
     Char c        -> VChar c
     String s      -> VList (fmap VChar s)
+    Text t        -> VText t
+    -- TODO this should store the BS...
+    -- OTOH, if this Prim was fetched through an ERef, we should not hash/store...
+
+    {-
+     Path:
+      We create/store some EPrim A, containing a tagged BS (foo)
+      We create some Exp B, containing ERefs to A
+      As B is being evaluated, we will hit fetchRef, so we now have a ref that's provably in the store
+        After getting the EPrim and seeing it's a (EPrim (Blob _)) we can create the hash and the thunk, which we return
+
+     -
+     - -}
+
+    Blob t        -> VBlob (error "FIXME" t) (pure t)
     Show          -> mkStrictLam $ \v -> string . show <$> ppValue' v
       where
         string = VList . fmap VChar
+
+    PackBlob      -> error "FIXME"
+    UnpackBlob    -> error "FIXME"
+    PackText      -> error "FIXME"
+    UnpackText    -> error "FIXME"
+
+
 
 
     Abs -> mkStrictLam  $ numOp1 pos abs
@@ -1361,6 +1387,8 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
         go (VBool x) = VBool x
         go (VChar x) = VChar x
         go (VList x) = VList (go <$> x)
+        go (VText x) = VText x
+        go (VBlob r t) = VBlob r t
         go (VRecord x) = VRecord (goT <$> x)
         go (VVariant l x) = VVariant l (goT x)
 
@@ -1374,6 +1402,8 @@ unsafeToValueF = pure . fromFO . hoistValue nt . toFO . toValue
         go (VDbl x) = VDbl x
         go (VBool x) = VBool x
         go (VChar x) = VChar x
+        go (VText x) = VText x
+        go (VBlob r t) = VBlob r t
         go (VList x) = VList (go <$> x)
         go (VRecord x) = VRecord (goT <$> x)
         go (VVariant l x) = VVariant l (goT x)
