@@ -166,6 +166,11 @@ pPrimFun = msum
   , fun "abs"     Abs
   , fun "mod"     Mod
   , fun "absurd"  Absurd
+
+  , fun "packBlob"    PackBlob
+  , fun "unpackBlob"  UnpackBlob
+  , fun "packText"    PackText
+  , fun "unpackText"  UnpackText
   ]
   where
     fun sym prim = reserved sym *> ((\pos -> mkPrim pos prim) <$> getPosition)

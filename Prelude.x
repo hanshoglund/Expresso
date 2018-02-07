@@ -31,7 +31,7 @@ let
                 : forall a. a -> <Just : a, Nothing: {}>
                 ;
     maybe       = (z f mb -> case mb of { Nothing {} -> z, Just x -> f x })
-                : forall a b r. b -> (a -> b) -> <Nothing : {}, Just : a> -> b;
+                : forall a b. b -> (a -> b) -> <Nothing : {}, Just : a> -> b;
 
     isJust      = maybe False (const True);
     isNothing   = maybe True (const False);
@@ -41,7 +41,9 @@ let
     listToMaybe = foldr (x -> const (Just x)) (Nothing {});
     maybeToList = maybe [] (x -> [x]);
     catMaybes   = xs -> concat (map maybeToList xs);
-    mapMaybe    = f -> maybe (Nothing {}) (Just << f);
+    mapMaybe    = f -> maybe (Nothing {}) (Just << f)
+                : forall a b. (a -> b) -> <Nothing: {}, Just: a> -> <Nothing: {}, Just: b>
+                ;
 
     ------------------------------------------------------------
     -- Logical operations

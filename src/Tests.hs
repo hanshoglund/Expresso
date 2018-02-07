@@ -106,17 +106,6 @@ lambdaTests = testGroup
   ]
 
 
-instance Functor (FI s) where
-  fmap f (FI x) = FI (f x)
-instance KnownSymbol s => Applicative (FI s) where
-  pure x = FI x
-  FI f <*> FI x = FI (f x)
-
-type Re = FieldRec
-re1 x = pure x & RNil
-re2 x y = pure x & re1 y
-re3 x y z = pure x & re2 y z
-
 recordTests = testGroup
   "Record expressions"
   [ hasValue "({x, y} -> {x, y}) {x=1, y=2}" $
@@ -191,7 +180,7 @@ conversionTests = testGroup
   [
 
   -- Prism Integer Char
-    hasValue "mapMaybe charToInt (intToChar 2)" (Just (2 :: Integer))
+    hasValue "(import \"Prelude.x\").mapMaybe charToInt (intToChar 2)" (Just (2 :: Integer))
   , hasValue "intToChar 43" (Just '+')
 
   -- Iso   [{}} Integer
@@ -208,7 +197,8 @@ conversionTests = testGroup
   -- NOTE: The HasValue instance for Blob may involve downloading...
   --  TODO add test cases for this as well...
   , hasValue "packBlob [102,111,111]" (Just ("foo" :: LBS.ByteString))
-  , hasValue "unpackBlob #\"foo\"" [102,111,111::Integer]
+  , hasValue "unpackBlob (packBlob [102,11,111])" [102,111,111::Integer]
+  {- , hasValue "unpackBlob #\"foo\"" [102,111,111::Integer] -}
   ]
 
 listTests = testGroup
@@ -288,38 +278,52 @@ instance (f ~ ElField, KnownSymbol k, FromValue v, FromValue (Rec f rs)) => From
       k = symbolVal kp
       kp = (undefined :: F k)
 
-
-r1 :: FieldRec '[ '("foo", Bool) ]
-r1 = (SField :: SField '("foo",Bool)) =: True
-
-r2 :: Rec ElField '[ '("foo", Bool), '("bar", Bool)]
-r2 = rec (f::F"foo") True <+> rec (f::F"bar") False
-
-
-a & b = fi a <+> b
-infixr 1 &
-infixr 7 ==>
-
-rCons :: KnownSymbol t => proxy t -> a -> FieldRec rs -> FieldRec ('(t, a) : rs)
-rCons _ v rs = Field v :& rs
-
-rec :: KnownSymbol t => proxy t -> a -> FieldRec '[ '(t, a) ]
-rec _ = (SField =:)
-
 fi :: FI s a -> FieldRec '[ '(s, a) ]
 fi (FI x) = SField =: x
 
 data FI :: Symbol -> * -> * where
   FI :: KnownSymbol s => a -> FI s a
 
+instance Functor (FI s) where
+  fmap f (FI x) = FI (f x)
 
-(==>) :: KnownSymbol s => F s -> a -> FI s a
-_ ==> b = FI b
+instance KnownSymbol s => Applicative (FI s) where
+  pure x = FI x
+  FI f <*> FI x = FI (f x)
+
+type Re = FieldRec
+
+re1 x = pure x & RNil
+re2 x y = pure x & re1 y
+re3 x y z = pure x & re2 y z
+
+
+{- r1 :: FieldRec '[ '("foo", Bool) ] -}
+{- r1 = (SField :: SField '("foo",Bool)) =: True -}
+
+{- r2 :: Rec ElField '[ '("foo", Bool), '("bar", Bool)] -}
+{- r2 = rec (f::F"foo") True <+> rec (f::F"bar") False -}
+
+
+a & b = fi a <+> b
+infixr 1 &
+{- infixr 7 ==> -}
+
+rCons :: KnownSymbol t => proxy t -> a -> FieldRec rs -> FieldRec ('(t, a) : rs)
+rCons _ v rs = Field v :& rs
+
+{- rec :: KnownSymbol t => proxy t -> a -> FieldRec '[ '(t, a) ] -}
+{- rec _ = (SField =:) -}
+
+
+
+{- (==>) :: KnownSymbol s => F s -> a -> FI s a -}
+{- _ ==> b = FI b -}
 
 
 data F :: Symbol -> * where
-f :: F s
-f = undefined
+{- f :: F s -}
+{- f = undefined -}
 
 -- Marshalling
 data Rat = Rat { nom :: Integer, denom :: Integer } | Simple Integer deriving (Generic)

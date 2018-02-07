@@ -53,7 +53,7 @@ module Expresso.Eval(
   , ThunkF(..)
   , Value
   , Value'
-  , ValueF(..)
+  , ValueF (..)
   , eval
   , bind
   , bind'
