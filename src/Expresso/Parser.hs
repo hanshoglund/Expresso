@@ -31,7 +31,7 @@ resolveImports = cataM alg where
   alg (InR (Constant (Import path)) :*: _) = do
       res <- ExceptT $ readFile path >>= return . parse path
       resolveImports res
-  alg _ = error "resolveImports: Impossible"
+  alg (InL e :*: pos) = return $ Fix (e :*: pos)
 
 ------------------------------------------------------------
 -- Parser

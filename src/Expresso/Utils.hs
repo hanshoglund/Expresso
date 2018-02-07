@@ -7,10 +7,16 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE CPP #-}
 module Expresso.Utils
 (
   module Data.Functor.Identity,
+#if __GLASGOW_HASKELL__ <= 708
   module Data.Functor.Constant,
+#else
+  module Data.Functor.Const,
+  pattern Constant,
+#endif
   module Data.Functor.Classes,
   Fix(..),
   K,
@@ -41,19 +47,32 @@ import Control.Monad hiding (mapM)
 import Data.Foldable
 import Data.Traversable
 import Data.Functor.Identity
-import Data.Functor.Constant
 import Data.Functor.Classes
+
+#if __GLASGOW_HASKELL__ <= 708
+import Data.Functor.Constant
+#else
+import Data.Functor.Const
+#endif
 
 newtype Fix f = Fix { unFix :: f (Fix f) }
 
+#if __GLASGOW_HASKELL__ <= 708
 type K = Constant
-{- _K :: forall a b. a -> Constant a b -}
-{- _K = Constant -}
-unK :: forall a b. Constant a b -> a
+
+unK :: Constant a b -> a
 unK = getConstant
+
 pattern K a = Constant a
-{- data K a b = K { unK :: a } -}
-  {- deriving (Eq, Ord, Show, Functor, Foldable, Traversable) -}
+#else
+type K = Const
+
+unK :: Const a b -> a
+unK = getConst
+
+pattern K a = Const a
+pattern Constant a = Const a
+#endif
 
 type I = Identity
 

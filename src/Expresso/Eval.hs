@@ -114,7 +114,7 @@ import Data.Word
 import Data.Functor.Identity
 import Data.Proxy
 import qualified GHC.Generics as G
-import GHC.TypeLits
+import GHC.TypeLits ()
 import Control.Exception (IOException, catch)
 import Data.IORef
 
