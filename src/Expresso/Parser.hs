@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Expresso.Parser where
 
@@ -27,10 +28,10 @@ import Expresso.Utils
 
 resolveImports :: ExpI -> ExceptT String IO Exp
 resolveImports = cataM alg where
-  alg (InR (K (Import path)) :*: _) = do
+  alg (InR (Constant (Import path)) :*: _) = do
       res <- ExceptT $ readFile path >>= return . parse path
       resolveImports res
-  alg (InL e :*: pos) = return $ Fix (e :*: pos)
+  alg _ = error "resolveImports: Impossible"
 
 ------------------------------------------------------------
 -- Parser
@@ -367,7 +368,7 @@ mkApp pos f = foldl (\g -> withPos pos . EApp g) f
 mkPrim :: Pos -> Prim -> ExpI
 mkPrim pos p = withPos pos $ EPrim p
 
-withPos :: Pos -> ExpF Name Bind Type ExpI -> ExpI
+withPos :: Pos -> ExpF Name Bind Type I ExpI -> ExpI
 withPos pos = withAnn pos . InL
 
 ------------------------------------------------------------

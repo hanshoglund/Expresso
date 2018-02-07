@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Expresso.Syntax where
 
@@ -23,19 +24,28 @@ import Data.Foldable
 import Data.Traversable
 #endif
 
-type ExpI  = Fix ((ExpF Name Bind Type :+: K Import) :*: K Pos)
-type Exp   = Fix (ExpF Name Bind Type :*: K Pos)
+
+-- | Expression with imports unresolved.
+type ExpI  = Fix ((ExpF Name Bind Type I :+: K Import) :*: K Pos)
+-- | Expression with imports resolved.
+type Exp   = Fix ExpF'
+
+
+type R     = String
+-- | Remote expression.
+type ExpR  = ExpF Name Bind Type (K R) R
 
 newtype Import = Import { unImport :: FilePath }
 
-data ExpF v b t r
+type ExpF' = ExpF Name Bind Type I :*: K Pos
+data ExpF v b t p r
   = EVar  v
-  | EPrim Prim
+  | EPrim (Prim_ p)
   | EApp  r r
   | ELam  (b v) r
   | EAnnLam (b v) t r
   | ELet  (b v) r r
-  | ERef  String t
+  | ERef  R t
   | EAnn  r t
   deriving (Show, Functor, Foldable, Traversable)
 
@@ -45,14 +55,15 @@ data Bind v
   | RecWildcard
   deriving Show
 
-data Prim
+type Prim = Prim_ I
+data Prim_ f
   = Int Integer
   | Dbl Double
   | Bool Bool
   | Char Char
   | String String
   | Text T.Text
-  | Blob LBS.ByteString
+  | Blob (f LBS.ByteString)
 
   | Show
   | Trace
@@ -98,7 +109,15 @@ data Prim
   | VariantInject Label
   | VariantEmbed Label
   | VariantElim Label
-  deriving (Eq, Ord, Show)
+{- deriving instance Eq1 f => Eq (Prim_ f) -}
+  {- (==) = eq1 -}
+{- deriving instance Ord1 f => Ord (Prim_ f) -}
+  {- compare = compare1 -}
+instance Show1 f => Show (Prim_ f) where
+  showsPrec = error "FIXME"
+  {- showsPrec = showsPrec1 -}
+
+{- deriving (Eq, Ord, Show) -}
 
 data ArithOp = Add | Mul | Sub | Div
   deriving (Eq, Ord, Show)

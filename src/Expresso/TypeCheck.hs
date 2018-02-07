@@ -294,53 +294,53 @@ rewriteRow _ _ ty _ = error $ "Unexpected type: " ++ show ty
 tcRho :: Exp -> Maybe Rho -> TI Type
 tcRho = cata alg
   where
-    alg :: (ExpF Name Bind Type :*: K Pos) (Maybe Rho -> TI Type)
+    alg :: ExpF' (Maybe Rho -> TI Type)
         -> Maybe Rho
         -> TI Type
-    alg (EVar n :*: K pos) mty = do
+    alg (EVar n :*: Constant pos) mty = do
         sigma <- lookupVar pos n
         instSigma pos sigma mty
-    alg (EPrim prim :*: K pos) mty = do
+    alg (EPrim prim :*: Constant pos) mty = do
         let sigma = tcPrim pos prim
         instSigma pos sigma mty
-    alg (ELam b e :*: K pos) Nothing = do -- TODO see Mu tCheckPats?
+    alg (ELam b e :*: Constant pos) Nothing = do -- TODO see Mu tCheckPats?
         varT <- newMetaVar pos CNone 'a'
         binds <- tcBinds pos b $ Just varT
         extendEnv binds $ do
             resT <- e Nothing
             return $ withAnn pos $ TFunF varT resT
-    alg (ELam b e :*: K pos) (Just ty) = do
+    alg (ELam b e :*: Constant pos) (Just ty) = do
         (varT, bodyT) <- unifyFun pos ty
         binds <- tcBinds pos b $ Just varT
         extendEnv binds $
             e (Just bodyT)
-    alg (EAnnLam b argT e :*: K pos) Nothing = do
+    alg (EAnnLam b argT e :*: Constant pos) Nothing = do
         argT  <- instWildcards argT
         binds <- tcBinds pos b $ Just argT
         extendEnv binds $ do
             resT <- e Nothing
             return $ withAnn pos $ TFunF argT resT
-    alg (EAnnLam b varT e :*: K pos) (Just ty) = do
+    alg (EAnnLam b varT e :*: Constant pos) (Just ty) = do
         varT  <- instWildcards varT
         (argT, bodyT) <- unifyFun pos ty
         subsCheck pos argT varT
         binds <- tcBinds pos b $ Just varT
         extendEnv binds $
             e (Just bodyT)
-    alg (EApp e1 e2 :*: K pos) mty = do
+    alg (EApp e1 e2 :*: Constant pos) mty = do
         funT <- e1 Nothing
         (argT, resT) <- unifyFun pos funT
         checkSigma pos e2 argT
         instSigma pos resT mty
-    alg (ELet b e1 e2 :*: K pos) mty = do
+    alg (ELet b e1 e2 :*: Constant pos) mty = do
         t1 <- e1 Nothing
         binds <- tcBinds pos b (Just t1) >>= mapM (inferSigma pos)
         extendEnv binds $
             e2 mty
-    alg (ERef e annT :*: K pos) mty = do
+    alg (ERef e annT :*: Constant pos) mty = do
         annT  <- instWildcards annT
         instSigma pos annT mty
-    alg (EAnn e annT :*: K pos) mty = do
+    alg (EAnn e annT :*: Constant pos) mty = do
         annT  <- instWildcards annT
         checkSigma pos e annT
         instSigma pos annT mty

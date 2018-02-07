@@ -181,7 +181,7 @@ instance Types Type where
 
   apply s t = cata alg t where
     alg :: (TypeF :*: K Pos) Type -> Type
-    alg (TMetaVarF v :*: K p) =
+    alg (TMetaVarF v :*: Constant p) =
         case IM.lookup (metaUnique v) (unSubst s) of
             Nothing -> Fix (TMetaVarF v :*: K p)
             Just t  -> t -- TODO
@@ -212,10 +212,10 @@ substTyVar tvs ts t = cata alg t m where
   alg :: (TypeF :*: K Pos) (Map Name Type -> Type)
       -> Map Name Type
       -> Type
-  alg (TForAllF vs f :*: K p) m  =
+  alg (TForAllF vs f :*: Constant p) m  =
       let m' = foldr M.delete m (map tyvarName vs)
       in Fix (TForAllF vs (f m') :*: K p)
-  alg (TVarF v :*: K p) m =
+  alg (TVarF v :*: Constant p) m =
         case M.lookup (tyvarName v) m of
             Nothing -> Fix (TVarF v :*: K p)
             Just t  -> t

@@ -120,7 +120,7 @@ import Data.IORef
 import Expresso.Syntax
 import Expresso.Type
 import Expresso.Pretty
-import Expresso.Utils (Fix(..), cata, (:*:)(..), K(..))
+import Expresso.Utils hiding (first)-- (Fix(..), cata, (:*:)(..), K(..))
 import qualified Expresso.Parser as Parser
 
 import Control.Monad.Var hiding (Var)
@@ -140,7 +140,6 @@ type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 -- Call-by-need environment
 -- A HashMap makes it easy to support record wildcards
 type Env f = HashMap Name (Thunk f)
-
 
 
 -- | Similar to MonadVar, but stores values of a single fixed type.
@@ -216,6 +215,7 @@ instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (EvalPrimT f) wh
   trace x = lift $ trace_ x
   failed x = EvalPrimT $ throwError x
   fetchRef x = error "TODO no fetchRef"
+  fetchPrimBS x = error "TODO no fetchRef"
   delay k = do
     v <- lift $ newVar Nothing
     pure $ Thunk $ do
@@ -270,6 +270,7 @@ instance (ApplicativeMonad f, MonadTrace f) => MonadEval (EvalT f) where
   trace x = lift $ trace_ x
   failed x = EvalT $ throwError x
   fetchRef x = error "TODO no fetchRef"
+  fetchPrimBS x = error "TODO no fetchRef"
   delay k = do
     v <- newMonoVar Nothing
     pure $ Thunk $ do
@@ -346,8 +347,10 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   delay    :: f (Value f) -> f (Thunk f)
   -- | Look up a reference.
   --   Called when evaluating 'ERef' expressions.
-  fetchRef  :: String -> f Exp
-  -- | Trace effect. Called when evaluating the 'Trace' primitive.
+  fetchRef  :: String -> f ExpR
+  -- | Look up a primitive bytestring.
+  fetchPrimBS :: String -> f LBS.ByteString
+  -- | Trace effect. Called when evaluating the 'Trace' primitive
   trace    :: String -> f ()
   -- | Trace effect. Called when evaluating the 'ErrorPrim' primitive.
   failed   :: String -> f a
@@ -426,17 +429,21 @@ extractChar :: Value f -> Maybe Char
 extractChar (VChar c) = Just c
 extractChar _ = Nothing
 
-
+evalRemote :: forall f . MonadEval f => Env f -> ExpR -> f (Value f)
+evalRemote env = go
+  where
+    go (EPrim (Blob (K r))) = pure $ VBlob r $ fetchPrimBS r
+    go e = failed $ "evalRemote: Unsupported remote value: " ++ show e
 
 -- | Evaluate an expression to WHNF.
 eval :: forall f . MonadEval f => Env f -> Exp -> f (Value f)
 eval env e = cata alg e env
   where
-    alg :: (ExpF Name Bind Type :*: K Pos) (Env f -> f (Value f))
+    alg :: ExpF' (Env f -> f (Value f))
         -> Env f
         -> f (Value f)
     alg (EVar v :*: _)         env = lookupValue env v >>= force
-    alg (EApp f x :*: K pos)   env = do
+    alg (EApp f x :*: Constant pos)   env = do
         f' <- f env
         x' <- delay (x env)
         evalApp pos f' x'
@@ -448,10 +455,8 @@ eval env e = cata alg e env
         e2 env'
     alg (ERef r _ :*: _)     _   = do
       exp <- fetchRef r
-      -- FIXME cache ref...
-      -- Referenced expressions can't have free variables
-      eval mempty exp
-    alg (EPrim p :*: K pos)    _   = pure $ evalPrim pos p
+      evalRemote mempty exp
+    alg (EPrim p :*: Constant pos)    _   = pure $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
 
 {- evalWithCache r env exp = eval env exp -}
@@ -499,7 +504,7 @@ evalPrim pos p = case p of
      -
      - -}
 
-    Blob t        -> VBlob (error "FIXME" t) (pure t)
+    Blob t        -> VBlob (error "FIXME" t) (pure $ runIdentity t)
     Show          -> mkStrictLam $ \v -> string . show <$> ppValue' v
       where
         string = VList . fmap VChar

@@ -5,10 +5,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Expresso.Utils(
+module Expresso.Utils
+(
+  module Data.Functor.Identity,
+  module Data.Functor.Constant,
+  module Data.Functor.Classes,
   Fix(..),
-  K(..),
+  K,
+  pattern K,
+  unK,
+  I,
   (:*:)(..),
   (:+:)(..),
   cata,
@@ -32,12 +40,22 @@ import Prelude hiding (mapM)
 import Control.Monad hiding (mapM)
 import Data.Foldable
 import Data.Traversable
-
+import Data.Functor.Identity
+import Data.Functor.Constant
+import Data.Functor.Classes
 
 newtype Fix f = Fix { unFix :: f (Fix f) }
 
-data K a b = K { unK :: a }
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+type K = Constant
+{- _K :: forall a b. a -> Constant a b -}
+{- _K = Constant -}
+unK :: forall a b. Constant a b -> a
+unK = getConstant
+pattern K a = Constant a
+{- data K a b = K { unK :: a } -}
+  {- deriving (Eq, Ord, Show, Functor, Foldable, Traversable) -}
+
+type I = Identity
 
 data (f :*: g) a = (:*:) { left :: f a, right :: g a }
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
