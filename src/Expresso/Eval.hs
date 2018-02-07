@@ -1454,8 +1454,11 @@ instance ToValue () where
 
 instance HasType LBS.ByteString where
   typeOf _ = _TBlob
-instance ToValue LBS.ByteString where
-  toValue x = VBlob (error "TODO hash ByteString") (pure x)
+
+-- NOTE: This isntance doesn't work as we can't call storePrimBS
+{- instance ToValue LBS.ByteString where -}
+  {- toValue x = VBlob (error "TODO hash ByteString") (pure x) -}
+
 instance FromValue LBS.ByteString where
   fromValue (VBlob h th) = th
   fromValue v            = failfromValue "VBlob" v
@@ -1603,9 +1606,7 @@ instance HasType a => HasType (Ref a) where
 instance (Referable a, FromValue a) => FromValue (Ref a) where
   fromValue = toRef
 
+-- NOTE: This instance doesn't work for similar reasons as (ToValue LBS.ByteString)
 {- instance ToValue a => ToValue (Ref a) where -}
-  {- toValue r@(Ref x) = either (error "") id $ runEvalM $ eval mempty (Fix $ ERef x ty :*: K dummyPos) -}
-    {- where -}
-      {- ty = typeOf $ pure r -}
 
 
