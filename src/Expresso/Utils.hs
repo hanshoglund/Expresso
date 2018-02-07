@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC -fno-warn-unused-imports #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -58,8 +61,10 @@ import Control.Applicative
 
 #if __GLASGOW_HASKELL__ <= 708
 import Data.Functor.Constant
+# define CONST Constant
 #else
 import Data.Functor.Const
+# define CONST Const
 #endif
 
 newtype Fix f = Fix { unFix :: f (Fix f) }
@@ -107,11 +112,14 @@ pattern Constant a = Const a
 
 
 -- TODO move
-deriving instance Generic1 (Constant a)
-instance A.FromJSON a => A.FromJSON1 (Constant a)
-  {- parseJSON x = Constant <$> A.parseJSON x -}
-instance A.FromJSON a => A.FromJSON (Constant a b) where
+
+#if __GLASGOW_HASKELL__ <= 708
+deriving instance Generic1 (CONST a)
+instance A.FromJSON a => A.FromJSON1 (CONST a)
+instance A.FromJSON a => A.FromJSON (CONST a b) where
   parseJSON x = Constant <$> A.parseJSON x
+#endif
+
 
 {- instance (Generic1 f, Generic1 g) => Generic1 (f :*: g) -}
 

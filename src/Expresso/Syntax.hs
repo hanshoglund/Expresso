@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
@@ -144,7 +145,8 @@ data Prim_ f
   {- compare = compare1 -}
 
 -- FIXME move
-instance A.ToJSON Void
+{- instance A.FromJSON Void where -}
+  {- parseJSON _ = empty -}
 
 -- FIXME requires UndecidableInstances...
 instance (A.ToJSON1 f, A.ToJSON (f Void)) => A.ToJSON (Prim_ f)

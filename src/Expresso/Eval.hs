@@ -44,6 +44,7 @@ module Expresso.Eval(
     ApplicativeMonad
   , ApplicativeMonadError
   , MonadTrace(..)
+  , MonadBlobStore(..)
 
   -- * Eval, bind, pretty-pring
   , Env
@@ -73,12 +74,14 @@ module Expresso.Eval(
   -- * MonadEval class, evaluation effects
   , MonadEval(..)
   , EvalT
-  , EvalPrimT
+  , runEvalT
+  , runEvalTEither
+  , EvalM
   , runEvalM
+  , EvalPrimT
+  , EvalIO
   , runEvalIO
   , runEvIO'
-  , EvalM
-  , EvalIO
 
   -- * References
   , Ref(..)

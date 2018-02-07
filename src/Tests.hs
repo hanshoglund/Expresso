@@ -196,8 +196,8 @@ conversionTests = testGroup
   -- Prism [Integer] Blob
   -- NOTE: The HasValue instance for Blob may involve downloading...
   --  TODO add test cases for this as well...
-  , hasValue "packBlob [102,111,111]" (Just ("foo" :: LBS.ByteString))
-  , hasValue "unpackBlob (packBlob [102,11,111])" [102,111,111::Integer]
+  , hasValue "packBlob [102,111,111]" ("foo" :: LBS.ByteString)
+  , hasValue "unpackBlob (packBlob [102,110,111])" [102,110,111::Integer]
   {- , hasValue "unpackBlob #\"foo\"" [102,111,111::Integer] -}
   ]
 
