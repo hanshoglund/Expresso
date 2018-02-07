@@ -87,6 +87,7 @@ module Expresso.Eval(
 where
 
 import Data.Hashable
+import qualified Data.Aeson as A
 import Control.Monad.Except hiding (mapM)
 import Control.Monad.State hiding (mapM)
 import Control.Monad.Reader hiding (mapM)
@@ -189,7 +190,7 @@ instance (ApplicativeMonad f) => MonadMonoVar (EvalT f) where
 
 
 -- | Similar to 'MonadWriter' 'String', but allows for more instances (and a separate namespace from 'MonadWriter').
-class Monad f => MonadTrace f where
+class ApplicativeMonad f => MonadTrace f where
   trace_ :: String -> f ()
 
 -- | Log using 'putStrLn'.
@@ -200,6 +201,16 @@ instance MonadTrace IO where
 instance MonadTrace Identity where
   trace_ = const $ pure ()
 
+class ApplicativeMonad f => MonadBlobStore f where
+  fetchBlob :: String -> f LBS.ByteString
+  storeBlob :: LBS.ByteString -> f String
+
+-- FIXME something nicer...
+instance MonadBlobStore IO where
+  fetchBlob n = LBS.readFile ("blob_" <> n)
+  storeBlob xs = LBS.writeFile ("blob_" <> h) xs >> pure h
+    where
+      h = show $ hash xs
 
 -- | Run evaluation in terms of 'MonadTrace' and 'MonadVar'.
 --
@@ -212,12 +223,12 @@ deriving instance (Applicative f, Monad f) => Applicative (EvalPrimT f)
 deriving instance (Applicative f, Monad f) => Monad (EvalPrimT f)
 deriving instance (Applicative f, Monad f) => Alternative (EvalPrimT f)
 
-instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (EvalPrimT f) where
+instance (Alternative f, MonadTrace f, MonadVar f, MonadBlobStore f) => MonadEval (EvalPrimT f) where
   trace x = lift $ trace_ x
   failed x = EvalPrimT $ throwError x
-  fetchRef x = error "TODO no fetchRef"
-  fetchPrimBS x = error "TODO no fetchRef"
-  storePrimBS x = error "TODO no storePrimBS"
+  fetchRef x  = maybe (failed "") pure . A.decode =<< fetchPrimBS x
+  fetchPrimBS = lift . fetchBlob
+  storePrimBS = lift . storeBlob
   delay k = do
     v <- lift $ newVar Nothing
     pure $ Thunk $ do

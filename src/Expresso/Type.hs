@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Expresso.Type where
 
 import Prelude hiding (foldr, concatMap)
@@ -32,6 +33,9 @@ import qualified Data.Set as S
 import Data.Foldable
 import Data.Traversable
 import Data.Monoid
+
+import GHC.Generics (Generic, Generic1)
+import qualified Data.Aeson as A
 
 import Expresso.Pretty
 import Expresso.Utils
@@ -68,7 +72,9 @@ data TypeF r
   | TVariantF r
   | TRowEmptyF
   | TRowExtendF Label r r
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic1)
+
+instance A.FromJSON1 TypeF
 
 type Uniq = Int
 
@@ -76,20 +82,26 @@ data Flavour
   = Bound    -- a type variable bound by a ForAll
   | Skolem   -- a skolem constant
   | Wildcard -- a type wildcard
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance A.FromJSON Flavour
 
 data TyVar = TyVar
   { tyvarFlavour    :: Flavour
   , tyvarName       :: Name
   , tyvarPrefix     :: Char -- used to generate names
   , tyvarConstraint :: Constraint
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.FromJSON TyVar
 
 data MetaTv = MetaTv  -- can unify with any tau-type
   { metaUnique      :: Uniq
   , metaPrefix      :: Char -- used to generate names
   , metaConstraint  :: Constraint
-  } deriving (Eq, Ord, Show)
+  } deriving (Eq, Ord, Show, Generic)
+
+instance A.FromJSON MetaTv
 
 -- | Type variable constraints
 -- e.g. for types of kind row, labels the associated tyvar must lack
@@ -97,14 +109,17 @@ data Constraint
   = CNone
   | CRow  (Set Label)
   | CStar StarHierarchy
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
+instance A.FromJSON Constraint
 -- | A simple hierarchy. i.e. Num has Ord and Eq, Ord has Eq.
 data StarHierarchy
   = CEq
   | COrd
   | CNum
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance A.FromJSON StarHierarchy
 
 {- getMonomorphic :: Scheme -> Maybe Type -}
 {- getMonomorphic (Scheme [] t) = Just t -}

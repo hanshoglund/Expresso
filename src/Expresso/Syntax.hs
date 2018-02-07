@@ -11,6 +11,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
+
+
+-- FIXME need?
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Expresso.Syntax where
 
@@ -18,6 +24,9 @@ import qualified Data.Text as T
 import Expresso.Type
 import Expresso.Utils
 import Data.Void
+
+import GHC.Generics(Generic)
+import qualified Data.Aeson as A
 
 #if __GLASGOW_HASKELL__ <= 708
 import Data.Foldable
@@ -37,6 +46,10 @@ type ExpR  = ExpF Name Bind Type (K R) R
 
 newtype Import = Import { unImport :: FilePath }
 
+-- TODO move
+instance A.FromJSON Pos where
+  parseJSON = error "FIXME fromJSON Pos"
+
 type ExpF' = ExpF Name Bind Type I :*: K Pos
 data ExpF v b t p r
   = EVar  v
@@ -47,13 +60,28 @@ data ExpF v b t p r
   | ELet  (b v) r r
   | ERef  R t
   | EAnn  r t
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Functor, Foldable, Traversable, Generic)
+
+instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r) => A.ToJSON (ExpF v b t p r)
+instance
+  (A.FromJSON (b v)
+  , A.FromJSON v
+  , A.FromJSON1 p
+  , A.FromJSON (p Void)
+  , A.FromJSON t
+  , A.FromJSON r
+  )
+    => A.FromJSON (ExpF v b t p r)
+{- deriving instance A.FromJSON (ExpF -}
 
 data Bind v
   = Arg v
   | RecArg [v]
   | RecWildcard
-  deriving Show
+  deriving (Show, Generic)
+
+instance A.FromJSON a => A.FromJSON (Bind a)
+{- instance A.FromJSON1 Bind -}
 
 type Prim = Prim_ I
 data Prim_ f
@@ -109,10 +137,19 @@ data Prim_ f
   | VariantInject Label
   | VariantEmbed Label
   | VariantElim Label
+  deriving (Generic)
 {- deriving instance Eq1 f => Eq (Prim_ f) -}
   {- (==) = eq1 -}
 {- deriving instance Ord1 f => Ord (Prim_ f) -}
   {- compare = compare1 -}
+
+-- FIXME move
+instance A.ToJSON Void
+
+-- FIXME requires UndecidableInstances...
+instance (A.ToJSON1 f, A.ToJSON (f Void)) => A.ToJSON (Prim_ f)
+instance (A.FromJSON1 f, A.FromJSON (f Void)) => A.FromJSON (Prim_ f)
+
 instance Show1 f => Show (Prim_ f) where
   showsPrec = error "FIXME"
   {- showsPrec = showsPrec1 -}
@@ -120,7 +157,13 @@ instance Show1 f => Show (Prim_ f) where
 {- deriving (Eq, Ord, Show) -}
 
 data ArithOp = Add | Mul | Sub | Div
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON ArithOp
+instance A.FromJSON ArithOp
 
 data RelOp   = RGT  | RGTE | RLT  | RLTE
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
+
+instance A.ToJSON RelOp
+instance A.FromJSON RelOp

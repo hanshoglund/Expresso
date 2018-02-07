@@ -7,6 +7,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE CPP #-}
 module Expresso.Utils
 (
@@ -48,6 +50,11 @@ import Data.Foldable
 import Data.Traversable
 import Data.Functor.Identity
 import Data.Functor.Classes
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
+import GHC.Generics (Generic, Generic1)
+import Control.Applicative
+
 
 #if __GLASGOW_HASKELL__ <= 708
 import Data.Functor.Constant
@@ -56,6 +63,29 @@ import Data.Functor.Const
 #endif
 
 newtype Fix f = Fix { unFix :: f (Fix f) }
+
+{-
+ (
+    (A.Value -> A.Parser (Fix f))
+    -> (A.Value -> A.Parser [Fix f])
+    -> A.Value
+    -> A.Parser (f (Fix f)))
+
+    -> A.Value
+
+    -> A.Parser (Fix f)
+
+
+ -
+ - -}
+
+instance A.FromJSON1 f => A.FromJSON (Fix f) where
+  parseJSON v =
+    let liftParse = (A.liftParseJSON :: (A.Value -> A.Parser (Fix f)) -> (A.Value -> A.Parser [Fix f]) -> A.Value -> A.Parser (f (Fix f)))
+    in Fix <$> (liftParse A.parseJSON undefined v)
+
+
+
 
 #if __GLASGOW_HASKELL__ <= 708
 type K = Constant
@@ -74,6 +104,25 @@ pattern K a = Const a
 pattern Constant a = Const a
 #endif
 
+
+
+-- TODO move
+deriving instance Generic1 (Constant a)
+instance A.FromJSON a => A.FromJSON1 (Constant a)
+  {- parseJSON x = Constant <$> A.parseJSON x -}
+instance A.FromJSON a => A.FromJSON (Constant a b) where
+  parseJSON x = Constant <$> A.parseJSON x
+
+{- instance (Generic1 f, Generic1 g) => Generic1 (f :*: g) -}
+
+
+instance (A.FromJSON1 f, A.FromJSON1 g) => A.FromJSON1 (f :*: g) where
+  liftParseJSON parse parseList x =
+    liftA2 (:*:)
+    (A.liftParseJSON parse parseList x
+    )
+    (A.liftParseJSON parse parseList x
+    )
 type I = Identity
 
 data (f :*: g) a = (:*:) { left :: f a, right :: g a }
