@@ -14,10 +14,10 @@
 
 module Expresso.Syntax where
 
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
 import Expresso.Type
 import Expresso.Utils
+import Data.Void
 
 #if __GLASGOW_HASKELL__ <= 708
 import Data.Foldable
@@ -63,7 +63,7 @@ data Prim_ f
   | Char Char
   | String String
   | Text T.Text
-  | Blob (f LBS.ByteString)
+  | Blob (f Void) -- We disallow embedding blobs in the AST directly, use ERef/ExpR to embed blobs
 
   | Show
   | Trace

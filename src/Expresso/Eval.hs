@@ -110,6 +110,7 @@ import qualified Data.Text as T
 import Control.Monad.ST
 import Data.STRef
 import Data.Void
+import Data.Word
 import Data.Functor.Identity
 import Data.Proxy
 import qualified GHC.Generics as G
@@ -216,6 +217,7 @@ instance (Alternative f, MonadTrace f, MonadVar f) => MonadEval (EvalPrimT f) wh
   failed x = EvalPrimT $ throwError x
   fetchRef x = error "TODO no fetchRef"
   fetchPrimBS x = error "TODO no fetchRef"
+  storePrimBS x = error "TODO no storePrimBS"
   delay k = do
     v <- lift $ newVar Nothing
     pure $ Thunk $ do
@@ -271,6 +273,7 @@ instance (ApplicativeMonad f, MonadTrace f) => MonadEval (EvalT f) where
   failed x = EvalT $ throwError x
   fetchRef x = error "TODO no fetchRef"
   fetchPrimBS x = error "TODO no fetchRef"
+  storePrimBS x = error "TODO no storePrimBS"
   delay k = do
     v <- newMonoVar Nothing
     pure $ Thunk $ do
@@ -350,6 +353,7 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   fetchRef  :: String -> f ExpR
   -- | Look up a primitive bytestring.
   fetchPrimBS :: String -> f LBS.ByteString
+  storePrimBS :: LBS.ByteString -> f String
   -- | Trace effect. Called when evaluating the 'Trace' primitive
   trace    :: String -> f ()
   -- | Trace effect. Called when evaluating the 'ErrorPrim' primitive.
@@ -504,15 +508,20 @@ evalPrim pos p = case p of
      -
      - -}
 
-    Blob t        -> VBlob (error "FIXME" t) (pure $ runIdentity t)
+    Blob t        -> absurd (runIdentity t)
     Show          -> mkStrictLam $ \v -> string . show <$> ppValue' v
       where
         string = VList . fmap VChar
 
-    PackBlob      -> error "FIXME"
-    UnpackBlob    -> error "FIXME"
-    PackText      -> error "FIXME"
-    UnpackText    -> error "FIXME"
+    PackBlob      -> mkStrictLam $ \v -> do
+      bytes <- LBS.pack <$> fromValueL getByte v
+      r <- storePrimBS bytes
+      pure $ VBlob r (pure bytes)
+    UnpackBlob    -> mkStrictLam $ \v -> case v of
+      VBlob r th -> VList . fmap (VInt . fromIntegral) . LBS.unpack <$> th
+      _ -> failOnValues pos [v]
+    PackText      -> VLam $ pure . VText . T.pack <=< fromValue'
+    UnpackText    -> VLam $ pure . VList . fmap VChar . T.unpack <=< fromValue'
 
 
 
@@ -987,8 +996,6 @@ renderADTValue (ADT outer)
 --     type Parser f = ((->) Value) `Compose` f
 --     _Parser = Compose
 --     runParser = getCompose
-
--- FIXME when composed with EvalM, this concatenates error messages...
 type Parser g f = ReaderT (Value g) f
 
 type Parser' f = Parser f f
@@ -1010,11 +1017,6 @@ nextName = do
       put $ RecNames $ n + 1
       pure $ Just $ "_" <> show n
 
-{- chooseP :: Alternative f => Parser f a -> Parser f a -> Parser f a -}
-{- chooseP = (<|>) -}
-
--- FIXME
-{- traceP x = trace (show x) x -}
 
 
 data RecNames
@@ -1478,7 +1480,11 @@ instance
 
 getC :: MonadEval f => Value g -> f Char
 getC (VChar c) = pure c
-getC v = failfromValue "VString" v
+getC v = failfromValue "VChar" v
+
+getByte :: MonadEval f => Value g -> f Word8
+getByte (VInt c) = pure (fromIntegral c)
+getByte v = failfromValue "VInt" v
 
 
 
@@ -1568,9 +1574,6 @@ roundTrip = undefined
     {- pureM = pure . runIdentity -}
 
 
--- FIXME debug
-{- traceV :: Value -> Value -}
-{- traceV x = trace (showR . runEvalM $ ppValue' x) x -}
 showR (Right x) = show x
 showR (Left e) = "<<Error:" <> show e <> ">>"
 
