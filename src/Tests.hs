@@ -23,6 +23,7 @@ import GHC.TypeLits
 import Data.Proxy
 import Data.Void
 import Data.Map (Map)
+import qualified Data.Text as T
 import Control.Monad.Error
 
 import Data.Vinyl
@@ -189,6 +190,10 @@ conversionTests = testGroup
   -- [Char] Text
   , hasValue "['a','b']" ("ab"::String)
   , hasValue "\"ab\"" ("ab"::String)
+
+  -- [Char] Text
+  , hasValue "packText ['f','o',intToChar 111]" ("foo" :: T.Text)
+  , hasValue "unpackText (packText ['a','b'])" ("ab" :: String)
 
   -- [Integer] Blob
   , hasValue "packBlob [102,111,111]" ("foo" :: LBS.ByteString)
@@ -466,9 +471,14 @@ assertTrue = return ()
 
 -- TODO
 -- More cleanup: doc stuff, rename unsafeFromV...
--- Make lists strict
+-- Make lists non-strict
 -- Add/test typeOfValue
 -- Add/test ref prim
 -- separate user errors from compile/TC errors...
--- Work on static expressions?
+-- Make stringlists emit Text, not [Char]
+-- Static evaluation
+--   Rewrite an AST containing
+--       Static (File { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" })
+--        :  <Static : <File : {url : [Char], format : <Zip : {} >, hash : <Sha256 : [Char] >} > >
+--
 -- Add Tim's suggestions
