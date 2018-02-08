@@ -38,17 +38,17 @@ import Data.Traversable
 
 -- | Expression with imports unresolved.
 type ExpI  = Fix ExpFI
-type ExpII = ExpF Name Bind Type I ExpI
-
--- | Expression with imports resolved.
-type Exp   = Fix ExpF'
+-- | Expression with imports resolved at the top-level.
+type ExpII = ExpF_ Name Bind Type I ExpI
 
 -- | Expression with static expressions unresolved.
 type ExpS  = Fix ExpFS
 
--- | Remote expression. The same As Exp, except we replace all recursion
---   with indirect references.
-type ExpR  = ExpF Name Bind Type (K R) R
+-- | Expression with imports and static expression resolved.
+type Exp   = Fix ExpF'
+
+-- | Remote expression.
+type ExpR  = ExpF_ Name Bind Type (K R) R
 
 -- | Remote reference.
 type R     = String
@@ -62,11 +62,11 @@ instance A.FromJSON Pos where
 instance A.ToJSON Pos where
   toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
 
-type ExpF' = ExpF Name Bind Type I `Product` K Pos
-type ExpFS = ExpF Name Bind Type I `Product` K Pos
-type ExpFI = ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
+type ExpF' = ExpF_ Name Bind Type I `Product` K Pos
+type ExpFS = ExpF_ Name Bind Type I `Product` K Pos
+type ExpFI = (ExpF_ Name Bind Type I `Sum` K Import) `Product` K Pos
 
-data ExpF v b t p r
+data ExpF_ v b t p r
   = EVar  v
   | EPrim (Prim_ p)
   | EApp  r r
@@ -77,7 +77,7 @@ data ExpF v b t p r
   | EAnn  r t
   deriving (Show, Functor, Foldable, Traversable, Generic)
 
-instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r) => A.ToJSON (ExpF v b t p r)
+instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r) => A.ToJSON (ExpF_ v b t p r)
 instance
   (A.FromJSON (b v)
   , A.FromJSON v
@@ -86,8 +86,8 @@ instance
   , A.FromJSON t
   , A.FromJSON r
   )
-    => A.FromJSON (ExpF v b t p r)
-{- deriving instance A.FromJSON (ExpF -}
+    => A.FromJSON (ExpF_ v b t p r)
+{- deriving instance A.FromJSON (ExpF_ -}
 
 data Bind v
   = Arg v
