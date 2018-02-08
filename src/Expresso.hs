@@ -31,7 +31,7 @@ import Control.Monad.Except (ExceptT(..), runExceptT, throwError)
 import Data.Monoid
 import Control.Applicative
 
-import Expresso.Eval (Env, EvalM, FromValue(..), Value, Value')
+import Expresso.Eval (EvalM, FromValue(..), Value, Value')
 import Expresso.TypeCheck (TIState, initTIState)
 import Expresso.Pretty (render)
 import Expresso.Syntax
@@ -59,11 +59,11 @@ typeOfString str = runExceptT $ do
     ExceptT $ typeOf top
 
 type Val = Eval.Value Eval.EvalIO
-type Envi = Eval.Env Eval.EvalIO
+type Env = Eval.Env Eval.EvalIO
 
 evalWithEnv
     :: FromValue a
-    => (TypeEnv, TIState, Envi)
+    => (TypeEnv, TIState, Env)
     -> ExpI
     -> IO (Either String a)
 evalWithEnv env expr = runExceptT $ do
@@ -71,7 +71,7 @@ evalWithEnv env expr = runExceptT $ do
   runEvalE $ Eval.fromValue v
 
 evalWithEnv'
-    :: (TypeEnv, TIState, Envi)
+    :: (TypeEnv, TIState, Env)
     -> ExpI
     -> IO (Either String Val)
 evalWithEnv' (tEnv, tState, env) ei = runExceptT $ do
@@ -103,10 +103,10 @@ evalString' str = runExceptT $ do
 
 -- used by the REPL to bind variables
 bind
-    :: (TypeEnv, TIState, Envi)
+    :: (TypeEnv, TIState, Env)
     -> Bind Name
     -> ExpI
-    -> IO (TypeEnv, TIState, Envi)
+    -> IO (TypeEnv, TIState, Env)
 bind (tEnv, tState, env) b ei = do
     r  <- runExceptT $ Parser.resolveImports ei
     case r of
