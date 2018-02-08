@@ -292,8 +292,16 @@ mkImport pos path = withAnn pos $ InR $ K $ Import path
 mkStatic :: Pos -> ExpSI -> ExpSI
 mkStatic pos exp = withAnn pos $ InL $ InR $ K $ Static (destatic exp)
 
+-- TODO generalize parser to get parse errors for nested static expressions
+-- As we run all static expressions at compile time, it's not too terrible
 destatic :: ExpSI -> Exp
-destatic = undefined
+destatic = cata g
+  where
+    g :: ExpFSI Exp -> Exp
+    g (InR (K (Import _)) :*: pos) = error $ show pos <> ": import statements are not allowed in static blocks"
+    g (InL (InR (K (Static _))) :*: pos) = error $ show pos <> ": nested static blocks are not allowed"
+    g (InL (InL e) :*: pos) = Fix (e :*: pos)
+    g _ = error "safe: not detected due to GHC pattern synonym limitation 4"
 
 mkInteger :: Pos -> Integer -> ExpSI
 mkInteger pos = mkPrim pos . Int
