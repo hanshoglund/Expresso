@@ -12,6 +12,7 @@ import Data.Maybe
 import Data.Monoid
 import Text.Parsec hiding (many, optional, parse, (<|>))
 import Text.Parsec.Language (emptyDef)
+import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Text.Parsec as P
@@ -206,7 +207,7 @@ pChar = (\pos -> mkPrim pos . Char)
      <$> getPosition
      <*> charLiteral
 
-pString = (\pos -> mkPrim pos . String)
+pString = (\pos -> mkPrim pos . Text . T.pack)
        <$> getPosition
        <*> stringLiteral
 

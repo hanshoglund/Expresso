@@ -412,13 +412,13 @@ ppValue :: Value f -> Doc
 ppValue VLamF{}     = "<Lambda>"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
-ppValue (VText d)   = text $ T.unpack d
+ppValue (VText d)   = string $ show d
 ppValue (VBlob d t) = "<Blob>"
 ppValue (VBool b)   = if b then "True" else "False"
 ppValue (VChar c)   = text $ c : []
 {- ppValue (VMaybe mx) = maybe "Nothing" (\v -> "Just" <+> ppParensValue v) mx -}
 ppValue (VList xs)
-    | Just str <- mapM extractChar xs = string $ show str
+    {-   | Just str <- mapM extractChar xs = string $ show str -}
     | otherwise     = bracketsList $ map ppValue xs
 ppValue (VRecord m) = bracesList $ map ppEntry $ HashMap.keys m
   where
@@ -513,7 +513,6 @@ evalPrim pos p = case p of
     Dbl d         -> VDbl d
     Bool b        -> VBool b
     Char c        -> VChar c
-    String s      -> VList (fmap VChar s)
     Text t        -> VText t
     -- TODO this should store the BS...
     -- OTOH, if this Prim was fetched through an ERef, we should not hash/store...
@@ -531,7 +530,7 @@ evalPrim pos p = case p of
     Blob t        -> absurd (runIdentity t)
     Show          -> mkStrictLam $ \v -> string . show <$> ppValue' v
       where
-        string = VList . fmap VChar
+        string = VText . T.pack
 
     PackBlob      -> mkStrictLam $ \v -> do
       bytes <- LBS.pack <$> fromValueL getByte v

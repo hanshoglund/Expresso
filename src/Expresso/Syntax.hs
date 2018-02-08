@@ -110,7 +110,6 @@ data Prim_ f
   | Dbl Double
   | Bool Bool
   | Char Char
-  | String String
   | Text T.Text
   | Blob (f Void) -- We disallow embedding blobs in the AST directly, use ERef/ExpR to embed blobs
 

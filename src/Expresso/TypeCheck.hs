@@ -458,20 +458,19 @@ tcPrim pos prim = annotate pos $ case prim of
   Dbl{}                  -> _TDbl
   Bool{}                 -> _TBool
   Char{}                 -> _TChar
-  String{}               -> _TList _TChar
   Text{}                 -> _TText
   Blob{}                 -> _TBlob
   Show                   ->
     -- use an Eq constraint, to prevent attempting to show lambdas
     let a = newTyVar (CStar CEq) 'a'
-    in _TForAll [a] $ _TFun (_TVar a) (_TList _TChar)
+    in _TForAll [a] $ _TFun (_TVar a) _TText
   Trace                  ->
     let a = newTyVar CNone 'a'
-    in _TForAll [a] $ _TFun (_TList _TChar)
+    in _TForAll [a] $ _TFun (_TText)
                               (_TFun (_TVar a) (_TVar a))
   ErrorPrim              ->
     let a = newTyVar CNone 'a'
-    in _TForAll [a] $ _TFun (_TList _TChar) (_TVar a)
+    in _TForAll [a] $ _TFun (_TText) (_TVar a)
 
   ArithPrim{}            ->
     binOp  $ newTyVar (CStar CNum) 'a'
