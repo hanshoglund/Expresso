@@ -46,7 +46,7 @@ resolveImports :: ExpSI -> ExceptT String IO Exp
 resolveImports esi = do
   es <- Parser.resolveImports_ esi
   -- TODO this runs evalStatic in IO...
-  liftIO $ Eval.evalStatic es
+  liftIO $ Eval.runEvalIO $ Eval.evalStatic es
 
 runEvalE :: Eval.EvalPrimT IO a -> ExceptT String IO a
 runEvalE = Eval.runEvIO'

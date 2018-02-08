@@ -1645,13 +1645,16 @@ evalStatic = error "FIXME static"
 -- TODO make sure this also typechecks before evaluating...
 
 class MonadEval f => MonadEvalStatic f where
-  runStatic :: Value f -> f Exp
+  runStatic :: Pos -> Value f -> f Exp
 
 -- TODO implement properly
 -- TODO generalize this to an arbitrary (MonadBlobStore, MonadFileSystem, MonadHTTP).
-instance MonadEvalStatic IO where
-  {- runStatic v = case v of -}
-
+instance MonadEvalStatic (EvalPrimT IO) where
+  runStatic pos v = case v of
+    VVariant "Web" _ -> undefined
+    VVariant "Git" _ -> undefined
+    VVariant "Local" _ -> undefined
+    v -> failOnValues pos [v]
 
 --       static (Web { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" })
 --        :  <Static : <File : {url : [Char], format : <Zip : {} >, hash : <Sha256 : [Char] >} > >
