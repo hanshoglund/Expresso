@@ -37,14 +37,21 @@ import Data.Traversable
 
 
 -- | Expression with imports unresolved.
-type ExpI  = Fix ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
+type ExpI  = Fix ExpFI2
+
 -- | Expression with imports resolved.
 type Exp   = Fix ExpF'
-type ExpS  = Fix ExpF'
 
-type R     = String
--- | Remote expression.
+-- | Expression with static expressions unresolved.
+type ExpS  = Fix ExpFS
+
+-- | Remote expression. The same As Exp, except we replace all recursion
+--   with indirect references.
 type ExpR  = ExpF Name Bind Type (K R) R
+
+-- | Remote reference.
+type R     = String
+
 
 newtype Import = Import { unImport :: FilePath }
 
@@ -54,8 +61,10 @@ instance A.FromJSON Pos where
 instance A.ToJSON Pos where
   toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
 
-type ExpF'  = ExpF Name Bind Type I `Product` K Pos
+type ExpF' = ExpF Name Bind Type I `Product` K Pos
+type ExpFS = ExpF Name Bind Type I `Product` K Pos
 type ExpFI = ExpF Name Bind Type I ExpI
+type ExpFI2 = ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
 
 data ExpF v b t p r
   = EVar  v
