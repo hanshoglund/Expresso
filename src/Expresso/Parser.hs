@@ -377,7 +377,7 @@ mkApp pos f = foldl (\g -> withPos pos . EApp g) f
 mkPrim :: Pos -> Prim -> ExpI
 mkPrim pos p = withPos pos $ EPrim p
 
-withPos :: Pos -> ExpFI -> ExpI
+withPos :: Pos -> ExpII -> ExpI
 withPos pos = withAnn pos . InL
 
 ------------------------------------------------------------

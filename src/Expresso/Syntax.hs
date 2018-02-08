@@ -37,7 +37,8 @@ import Data.Traversable
 
 
 -- | Expression with imports unresolved.
-type ExpI  = Fix ExpFI2
+type ExpI  = Fix ExpFI
+type ExpII = ExpF Name Bind Type I ExpI
 
 -- | Expression with imports resolved.
 type Exp   = Fix ExpF'
@@ -63,8 +64,7 @@ instance A.ToJSON Pos where
 
 type ExpF' = ExpF Name Bind Type I `Product` K Pos
 type ExpFS = ExpF Name Bind Type I `Product` K Pos
-type ExpFI = ExpF Name Bind Type I ExpI
-type ExpFI2 = ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
+type ExpFI = ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
 
 data ExpF v b t p r
   = EVar  v
