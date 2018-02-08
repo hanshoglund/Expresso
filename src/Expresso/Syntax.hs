@@ -102,6 +102,7 @@ data Bind v
   deriving (Show, Generic)
 
 instance A.FromJSON a => A.FromJSON (Bind a)
+instance A.ToJSON a => A.ToJSON (Bind a)
 {- instance A.FromJSON1 Bind -}
 
 type Prim = Prim_ I

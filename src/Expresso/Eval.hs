@@ -235,6 +235,7 @@ instance (Alternative f, MonadTrace f, MonadVar f, MonadBlobStore f) => MonadEva
   trace x = lift $ trace_ x
   failed x = EvalPrimT $ throwError x
   fetchRef x  = maybe (failed "") pure . A.decode =<< fetchPrimBS x
+  storeRef x = storePrimBS $ A.encode x
   fetchPrimBS = lift . fetchBlob
   storePrimBS = lift . storeBlob
   delay k = do
@@ -291,6 +292,7 @@ instance (ApplicativeMonad f, MonadTrace f) => MonadEval (EvalT f) where
   trace x = lift $ trace_ x
   failed x = EvalT $ throwError x
   fetchRef x = error "TODO no fetchRef"
+  storeRef x = error "TODO no storeRef"
   fetchPrimBS x = error "TODO no fetchRef"
   storePrimBS x = error "TODO no storePrimBS"
   delay k = do
@@ -370,6 +372,7 @@ class (Applicative f, Monad f, Alternative f) => MonadEval f where
   -- | Look up a reference.
   --   Called when evaluating 'ERef' expressions.
   fetchRef  :: String -> f ExpR
+  storeRef  :: ExpR -> f String
   -- | Look up a primitive bytestring.
   fetchPrimBS :: String -> f LBS.ByteString
   storePrimBS :: LBS.ByteString -> f String
@@ -413,7 +416,7 @@ ppValue VLamF{}     = "<Lambda>"
 ppValue (VInt  i)   = integer i
 ppValue (VDbl  d)   = double d
 ppValue (VText d)   = string $ show d
-ppValue (VBlob d t) = "<Blob>"
+ppValue (VBlob d t) = "<Blob " <> text d <> ">"
 ppValue (VBool b)   = if b then "True" else "False"
 ppValue (VChar c)   = text $ c : []
 {- ppValue (VMaybe mx) = maybe "Nothing" (\v -> "Just" <+> ppParensValue v) mx -}
@@ -535,7 +538,7 @@ evalPrim pos p = case p of
     PackBlob      -> mkStrictLam $ \v -> do
       bytes <- LBS.pack <$> fromValueL getByte v
       r <- storePrimBS bytes
-      pure $ VBlob r (pure bytes)
+      pure $ VBlob r (fetchPrimBS r)
     UnpackBlob    -> mkStrictLam $ \v -> case v of
       VBlob r th -> VList . fmap (VInt . fromIntegral) . LBS.unpack <$> th
       _ -> failOnValues pos [v]
@@ -1504,8 +1507,8 @@ instance
 #endif
   FromValue String where
     {- fromValue (VString s) = return s -}
-    fromValue (VList xs)  = traverse getC xs
-    fromValue v           = failfromValue "VString" v
+    fromValue (VText t)   = pure $ T.unpack t
+    fromValue v           = failfromValue "VText" v
       where
 
 getC :: MonadEval f => Value g -> f Char
@@ -1680,7 +1683,20 @@ instance MonadEvalStatic (EvalPrimT IO) where
   runStatic pos v = case v of
     VVariant "Web" _ -> undefined
     VVariant "Git" _ -> undefined
-    VVariant "Local" _ -> undefined
+    VVariant "Local" x -> do
+      x' <- force x
+      case x' of
+        VRecord r -> case HashMap.lookup "path" r of
+          Just path -> do
+            path' <- fromValue' path
+            bs <- lift $ LBS.readFile path'
+            h <- storePrimBS bs
+            lift $ putStrLn $ show ("DEBUG", h)
+            let newExp :: ExpR = EPrim $ Blob $ K h
+            h2 <- storeRef newExp
+            pure $ Fix $ ERef h2 _TBlob :*: K pos
+          _ -> failOnValues pos [v]
+        _ -> failOnValues pos [v]
     v -> failOnValues pos [v]
 
 --       static (Web { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" })
