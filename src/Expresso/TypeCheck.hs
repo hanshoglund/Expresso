@@ -296,7 +296,7 @@ rewriteRow _ _ ty _ = error $ "Unexpected type: " ++ show ty
 tcRho :: Exp -> Maybe Rho -> TI Type
 tcRho = cata alg
   where
-    alg :: ExpF' (Maybe Rho -> TI Type)
+    alg :: ExpF (Maybe Rho -> TI Type)
         -> Maybe Rho
         -> TI Type
     alg (EVar n :*: Constant pos) mty = do

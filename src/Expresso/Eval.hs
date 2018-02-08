@@ -458,7 +458,7 @@ evalRemote env = go
 eval :: forall f . MonadEval f => Env f -> Exp -> f (Value f)
 eval env e = cata alg e env
   where
-    alg :: ExpF' (Env f -> f (Value f))
+    alg :: ExpF (Env f -> f (Value f))
         -> Env f
         -> f (Value f)
     alg (EVar v :*: _)         env = lookupValue env v >>= force

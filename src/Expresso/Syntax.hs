@@ -45,7 +45,7 @@ type ExpITopLevel = ExpF_ Name Bind Type I ExpI
 type ExpS  = Fix ExpFS
 
 -- | Expression with imports and static expression resolved.
-type Exp   = Fix ExpF'
+type Exp   = Fix ExpF
 
 -- | Remote expression.
 type ExpR  = ExpF_ Name Bind Type (K R) R
@@ -65,7 +65,7 @@ instance A.FromJSON Pos where
 instance A.ToJSON Pos where
   toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
 
-type ExpF'  = ExpF_ Name Bind Type I `Product` K Pos
+type ExpF  = ExpF_ Name Bind Type I `Product` K Pos
 type ExpFS  = (ExpF_ Name Bind Type I `Sum` K Static)`Product` K Pos
 type ExpFI  = (ExpF_ Name Bind Type I `Sum` K Import) `Product` K Pos
 type ExpFSI = (ExpF_ Name Bind Type I `Sum` K Static `Sum` K Import) `Product` K Pos
