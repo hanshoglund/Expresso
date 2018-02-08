@@ -1661,6 +1661,10 @@ evalStatic = cata g
     g (InL (EAnnLam b t x) :*: K pos) = do
       x' <- x
       pure $ Fix $ EAnnLam b t x' :*: K pos
+    g (InL (ELet b x y)  :*: K pos) = do
+      x' <- x
+      y' <- y
+      pure (Fix $ ELet b x' y' :*: K pos)
     g (InL (ERef x t)  :*: K pos) = do
       pure (Fix $ ERef x t :*: K pos)
     g (InL (EAnn x t)  :*: K pos) = do
