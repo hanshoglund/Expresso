@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
+{-# OPTIONS_GHC -fno-warn-dodgy-exports #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -239,6 +240,7 @@ stripAnn :: forall f a. Functor f => Fix (f `Product` K a) -> Fix f
 stripAnn = cata alg where
   alg :: (f :*: K a) (Fix f) -> Fix f
   alg (e :*: _) = Fix e
+  alg _ = error "safe: not detected due to GHC pattern synonym limitation"
 
 -- | retrieve annotation
 getAnn :: Fix (f `Product` K a) -> a

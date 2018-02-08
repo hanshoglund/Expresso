@@ -54,7 +54,9 @@ instance A.FromJSON Pos where
 instance A.ToJSON Pos where
   toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
 
-type ExpF' = ExpF Name Bind Type I `Product` K Pos
+type ExpF'  = ExpF Name Bind Type I `Product` K Pos
+type ExpFI = ExpF Name Bind Type I ExpI
+
 data ExpF v b t p r
   = EVar  v
   | EPrim (Prim_ p)

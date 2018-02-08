@@ -65,6 +65,9 @@ let
     override = r overrides -> mkOverridable (r.override_ overrides)
 
 
+    {- consul = static (Web { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" }) -}
+
+
 -- Exports
 in { id
    , const
