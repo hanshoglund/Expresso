@@ -470,15 +470,20 @@ illTyped str = testCase str $ do
 assertTrue = return ()
 
 -- TODO
+-- Do not export RT representation from Eval (move vinyl stuff)
 -- More cleanup: doc stuff, rename unsafeFromV...
 -- Make lists non-strict
 -- Add/test typeOfValue
--- Add/test ref prim
 -- separate user errors from compile/TC errors...
 -- Make stringlists emit Text, not [Char]
 -- Static evaluation
 --   Rewrite an AST containing
---       Static (File { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" })
+--
+--       static (Web { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" })
 --        :  <Static : <File : {url : [Char], format : <Zip : {} >, hash : <Sha256 : [Char] >} > >
 --
--- Add Tim's suggestions
+--       static (Local { File { path= "/foo/bar" }})
+--
+--       static (Local { Directory { path= "/foo/bar" }})
+--
+--       static (Local { ForgeBinary { name = "scl-ui" } })
