@@ -19,10 +19,11 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.ByteString.Lazy as LBS
 
 import GHC.Generics
-import GHC.TypeLits
+import GHC.TypeLits hiding (Text)
 import Data.Proxy
 import Data.Void
 import Data.Map (Map)
+import Data.Text (Text)
 import qualified Data.Text as T
 import Control.Monad.Error
 
@@ -188,12 +189,12 @@ conversionTests = testGroup
   , hasValue "length [{},{}]" (2 :: Integer)
   , hasValue "repeat {} 2" (replicate 2 ())
   -- [Char] Text
-  , hasValue "['a','b']" ("ab"::String)
-  , hasValue "\"ab\"" ("ab"::String)
+  , hasValue "\"ab\"" ("ab"::String) -- parse Haskell String as Expresso text for convenience
+  , hasValue "\"ab\"" ("ab"::Text)
 
   -- [Char] Text
   , hasValue "packText ['f','o',intToChar 111]" ("foo" :: T.Text)
-  , hasValue "unpackText (packText ['a','b'])" ("ab" :: String)
+  , hasValue "packText (unpackText \"ab\")" ("ab" :: T.Text)
 
   -- [Integer] Blob
   , hasValue "packBlob [102,111,111]" ("foo" :: LBS.ByteString)
@@ -211,6 +212,8 @@ listTests = testGroup
 relationalTests = testGroup
   "Relational expressions"
   [ hasValue "(1 == 2)" False
+  , hasValue "(\"foo\" == \"bar\")" False
+  , hasValue "\"a\" < \"b\"" True
   , hasValue "1/=2" True
   , illTyped "1 == 2 == 3"
   , hasValue "{x = 1, y = True} == {y = True, x = 1}" True -- field order should not matter
@@ -247,7 +250,9 @@ rankNTests = testGroup
          "let k = f g x -> f (g x) in let t = k ({} -> True) (x -> {}) False in let xx = k (a -> {}) (x -> {}) in t" True
 
   , hasValue "let f = (g : forall a. a -> a) -> {l = g True, r = g 1} in f (x -> x) == {l = True, r = 1}" True
-  , hasValue "let f = g -> {l = g True, r = g 1} : (forall a. a -> a) -> {l : Bool, r : Int } in f (x -> x) == {l = True, r = 1}" True , hasValue "let f = (m : forall a. { reverse : [a] -> [a] |_}) -> {l = m.reverse [True, False], r = m.reverse \"abc\" } in f (import \"Prelude.x\") == {l = [False, True], r = \"cba\"}" True
+  , hasValue "let f = g -> {l = g True, r = g 1} : (forall a. a -> a) -> {l : Bool, r : Int } in f (x -> x) == {l = True, r = 1}" True
+  , hasValue
+         "let f = (m : forall a. { reverse : [a] -> [a] |_}) -> {l = m.reverse [True, False], r = m.reverse (unpackText \"abc\") } in f (import \"Prelude.x\") == {l = [False, True], r = unpackText \"cba\"}" True
   -- FIXME breaks due to parser bug
   {- , hasValue -}
          {- "let f = (g -> {l = g True, r = g 1}) ::: ((forall a. a -> a) -> {l : Bool, r : Int }) in f (x -> x) == {l = True, r = 1}" True -}
@@ -344,6 +349,8 @@ foreignTypeTests = testGroup
   [ hasType (xx :: Proxy Int) "Int"
   , hasType (xx :: Proxy Integer) "Int"
   , hasType (xx :: Proxy Double) "Double"
+  , hasType (xx :: Proxy Text) "Text"
+  , hasType (xx :: Proxy String) "Text"
   , hasType (xx :: Proxy [(Int,Bool)])
       "[{_1 : Int, _2 : Bool}]"
     -- or?:
@@ -369,7 +376,7 @@ foreignTypeTests = testGroup
   , hasType (xx :: Proxy (Int -> EvalM (Int, Bool)))
       "Int -> {_1 : Int, _2 : Bool}"
   , hasType (xx :: Proxy ((), Int -> EvalM Int, String -> EvalM Bool))
-      "{_1 : {}, _2 : Int -> Int, _3 : [Char] -> Bool}"
+      "{_1 : {}, _2 : Int -> Int, _3 : Text -> Bool}"
   ]
 
 foreignImportTests = testGroup
@@ -475,7 +482,6 @@ assertTrue = return ()
 -- Make lists non-strict
 -- Add/test typeOfValue
 -- separate user errors from compile/TC errors...
--- Make stringlists emit Text, not [Char]
 
 
 -- Static evaluation

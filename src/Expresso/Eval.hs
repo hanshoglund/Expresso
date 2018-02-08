@@ -542,7 +542,7 @@ evalPrim pos p = case p of
     UnpackBlob    -> mkStrictLam $ \v -> case v of
       VBlob r th -> VList . fmap (VInt . fromIntegral) . LBS.unpack <$> th
       _ -> failOnValues pos [v]
-    PackText      -> VLam $ pure . VText . T.pack <=< fromValue'
+    PackText      -> VLam $ pure . VText . T.pack <=< fromValueL getC <=< force
     UnpackText    -> VLam $ pure . VList . fmap VChar . T.unpack <=< fromValue'
 
 
@@ -731,6 +731,7 @@ equalValues _ (VInt i1)    (VInt i2)    = return $ i1 == i2
 equalValues _ (VDbl d1)    (VDbl d2)    = return $ d1 == d2
 equalValues _ (VBool b1)   (VBool b2)   = return $ b1 == b2
 equalValues _ (VChar c1)   (VChar c2)   = return $ c1 == c2
+equalValues _ (VText t1)   (VText t2)   = return $ t1 == t2
 equalValues p (VList xs)   (VList ys)
     | length xs == length ys = and <$> zipWithM (equalValues p) xs ys
     | otherwise = return False
@@ -756,6 +757,7 @@ compareValues _ (VInt i1)    (VInt i2)    = return $ compare i1 i2
 compareValues _ (VDbl d1)    (VDbl d2)    = return $ compare d1 d2
 compareValues _ (VBool b1)   (VBool b2)   = return $ compare b1 b2
 compareValues _ (VChar c1)   (VChar c2)   = return $ compare c1 c2
+compareValues _ (VText t1)   (VText t2)   = return $ compare t1 t2
 compareValues p (VList xs)   (VList ys)   = go xs ys
   where
     {- go :: [Value] -> [Value] -> f Ordering -}
@@ -1500,6 +1502,20 @@ instance ToValue T.Text where
 instance FromValue T.Text where
   fromValue (VText b) = return b
   fromValue v         = failfromValue "VText" v
+
+instance
+#if __GLASGOW_HASKELL__ > 708
+  {-# OVERLAPS #-}
+#endif
+  HasType String where
+    typeOf _ = _TText
+
+instance
+#if __GLASGOW_HASKELL__ > 708
+  {-# OVERLAPS #-}
+#endif
+  ToValue String where
+    toValue = VText . T.pack
 
 instance
 #if __GLASGOW_HASKELL__ > 708
