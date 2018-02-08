@@ -28,13 +28,12 @@ import Expresso.Utils
 
 
 resolveImports_ :: ExpSI -> ExceptT String IO ExpS
-resolveImports_ = undefined
-{- resolveImports_ = cataM alg where -}
-  {- alg (InR (Constant (Import path)) :*: _) = do -}
-      {- res <- ExceptT $ readFile path >>= return . parse path -}
-      {- resolveImports_ res -}
-  {- alg (InL e :*: pos) = return $ Fix (e :*: pos) -}
-  {- alg _ = error "safe: GHC pattern synonym limitation" -}
+resolveImports_ = cataM alg where
+  alg (InR (Constant (Import path)) :*: _) = do
+      res <- ExceptT $ readFile path >>= return . parse path
+      resolveImports_ res
+  alg (InL e :*: pos) = return $ Fix (e :*: pos)
+  alg _ = error "safe: GHC pattern synonym limitation"
 
 ------------------------------------------------------------
 -- Parser
@@ -380,9 +379,7 @@ mkPrim :: Pos -> Prim -> ExpSI
 mkPrim pos p = withPos pos $ EPrim p
 
 withPos :: Pos -> ExpSITopLevel -> ExpSI
-withPos pos =
-  undefined
-  -- withAnn pos . InL
+withPos pos esi = Fix $ InL (InL esi) :*: K pos
 
 ------------------------------------------------------------
 -- Parsers for type annotations

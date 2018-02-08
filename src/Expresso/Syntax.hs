@@ -70,7 +70,7 @@ instance A.ToJSON Pos where
 type ExpF  = ExpF_ Name Bind Type I `Product` K Pos
 type ExpFS  = (ExpF_ Name Bind Type I `Sum` K Static)`Product` K Pos
 type ExpFI  = (ExpF_ Name Bind Type I `Sum` K Import) `Product` K Pos
-type ExpFSI = (ExpF_ Name Bind Type I `Sum` K Static `Sum` K Import) `Product` K Pos
+type ExpFSI = ((ExpF_ Name Bind Type I `Sum` K Static) `Sum` K Import) `Product` K Pos
 
 data ExpF_ v b t p r
   = EVar  v
