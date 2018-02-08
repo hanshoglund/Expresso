@@ -39,7 +39,7 @@ import Data.Traversable
 -- | Expression with imports unresolved.
 type ExpI  = Fix ExpFI
 -- | Expression with imports resolved at the top-level.
-type ExpII = ExpF_ Name Bind Type I ExpI
+type ExpITopLevel = ExpF_ Name Bind Type I ExpI
 
 -- | Expression with static expressions unresolved.
 type ExpS  = Fix ExpFS
