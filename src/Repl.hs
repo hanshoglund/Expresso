@@ -1,12 +1,15 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-unused-imports#-}
+{-# LANGUAGE CPP, ScopedTypeVariables #-}
 
 ------------------------------------------------------------
 -- Expresso Read-Eval-Print-Loop
 --
-module Main where
+#if __GLASGOW_HASKELL__ <= 708
+module Repl where
+#endif
 
 import Control.Applicative
-import Control.Monad (forM_)
+{- import Control.Monad (forM_) -}
 import Control.Monad.IO.Class
 import Control.Monad.State.Strict
 import Data.Char
@@ -20,6 +23,26 @@ import qualified System.Console.Haskeline as HL
 import qualified Text.Parsec as P
 
 import Expresso
+  ( bind
+  , dummyPos
+  , evalWithEnv'
+  , initTIState
+  , showType
+  , showValue
+  , showValue'
+  , typeOfWithEnv
+
+  , Bind(..)
+  , ExpI
+  , Name
+  , TIState
+  , TypeEnv
+  , TypeEnv
+  , Value
+  , Import(..)
+  , TypeEnv(..)
+  )
+import Data.Monoid
 import Expresso.Eval (Env, EvalIO)
 import Expresso.Parser ( pExp, pLetDecl, whiteSpace
                        , reserved, reservedOp, stringLiteral
