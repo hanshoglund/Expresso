@@ -28,6 +28,7 @@ module Expresso
 
 import Control.Monad ((>=>))
 import Control.Monad.Except (ExceptT(..), runExceptT, throwError)
+import Control.Monad.IO.Class
 import Data.Monoid
 import Control.Applicative
 
@@ -41,16 +42,21 @@ import qualified Expresso.Eval as Eval
 import qualified Expresso.TypeCheck as TypeCheck
 import qualified Expresso.Parser as Parser
 
+resolveImports :: ExpSI -> ExceptT String IO Exp
+resolveImports esi = do
+  es <- Parser.resolveImports_ esi
+  -- TODO this runs evalStatic in IO...
+  liftIO $ Eval.evalStatic es
 
 runEvalE :: Eval.EvalPrimT IO a -> ExceptT String IO a
 runEvalE = Eval.runEvIO'
 
-typeOfWithEnv :: TypeEnv -> TIState -> ExpI -> IO (Either String Type)
+typeOfWithEnv :: TypeEnv -> TIState -> ExpSI -> IO (Either String Type)
 typeOfWithEnv tEnv tState ei = runExceptT $ do
-    e <- Parser.resolveImports ei
+    e <- resolveImports ei
     ExceptT $ return $ inferTypes tEnv tState e
 
-typeOf :: ExpI -> IO (Either String Type)
+typeOf :: ExpSI -> IO (Either String Type)
 typeOf = typeOfWithEnv mempty initTIState
 
 typeOfString :: String -> IO (Either String Type)
@@ -64,7 +70,7 @@ type Env = Eval.Env Eval.EvalIO
 evalWithEnv
     :: FromValue a
     => (TypeEnv, TIState, Env)
-    -> ExpI
+    -> ExpSI
     -> IO (Either String a)
 evalWithEnv env expr = runExceptT $ do
   v <- ExceptT $ evalWithEnv' env expr
@@ -72,18 +78,18 @@ evalWithEnv env expr = runExceptT $ do
 
 evalWithEnv'
     :: (TypeEnv, TIState, Env)
-    -> ExpI
+    -> ExpSI
     -> IO (Either String Val)
 evalWithEnv' (tEnv, tState, env) ei = runExceptT $ do
-  e      <- Parser.resolveImports ei
+  e      <- resolveImports ei
   _sigma <- ExceptT . return $ inferTypes tEnv tState e
   runEvalE . (Eval.eval env {- >=> Eval.fromValue-}) $ e
 
 
-eval :: FromValue a => ExpI -> IO (Either String a)
+eval :: FromValue a => ExpSI -> IO (Either String a)
 eval = evalWithEnv (mempty, initTIState, mempty)
 
-eval' :: ExpI -> IO (Either String Val)
+eval' :: ExpSI -> IO (Either String Val)
 eval' = evalWithEnv' (mempty, initTIState, mempty)
 
 evalFile :: FromValue a => FilePath -> IO (Either String a)
@@ -105,10 +111,10 @@ evalString' str = runExceptT $ do
 bind
     :: (TypeEnv, TIState, Env)
     -> Bind Name
-    -> ExpI
+    -> ExpSI
     -> IO (TypeEnv, TIState, Env)
 bind (tEnv, tState, env) b ei = do
-    r  <- runExceptT $ Parser.resolveImports ei
+    r  <- runExceptT $ resolveImports ei
     case r of
       Left x -> error x
       Right e -> do

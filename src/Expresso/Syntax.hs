@@ -44,6 +44,7 @@ type ExpITopLevel = ExpF_ Name Bind Type I ExpI
 -- | Expression with static expressions unresolved.
 type ExpS  = Fix ExpFS
 type ExpSI = Fix ExpFSI
+type ExpSITopLevel = ExpF_ Name Bind Type I ExpSI
 
 -- | Expression with imports and static expression resolved.
 type Exp   = Fix ExpF

@@ -33,7 +33,7 @@ import Expresso
   , typeOfWithEnv
 
   , Bind(..)
-  , ExpI
+  , ExpSI
   , Name
   , TIState
   , TypeEnv
@@ -61,8 +61,8 @@ data ReplState = ReplState
   }
 
 data Command
-  = Peek      ExpI
-  | Type      ExpI
+  = Peek      ExpSI
+  | Type      ExpSI
   | ChangeCWD FilePath
   | BeginMulti
   | Reset
@@ -72,8 +72,8 @@ data Command
 
 data Line
   = Command Command
-  | Term ExpI
-  | Decl (Bind Name) ExpI
+  | Term ExpSI
+  | Decl (Bind Name) ExpSI
   | NoOp
 
 type Val = Value EvalIO
@@ -174,7 +174,7 @@ doCommand c = case c of
     , ""
     ]
 
-doEval :: (Val -> IO String) -> ExpI -> Repl ()
+doEval :: (Val -> IO String) -> ExpSI -> Repl ()
 doEval pp e = do
   envs <- lift $ gets stateEnv
   v'e  <- liftIO $ evalWithEnv' envs e
@@ -182,7 +182,7 @@ doEval pp e = do
       Left err  -> spew err
       Right val -> liftIO (pp val) >>= spew
 
-doDecl :: Bind Name -> ExpI -> Repl ()
+doDecl :: Bind Name -> ExpSI -> Repl ()
 doDecl b e = do
   envs   <- lift $ gets stateEnv
   envs'e <- liftIO $ fmap pure $ bind envs b e
@@ -190,7 +190,7 @@ doDecl b e = do
       Left err    -> spew err
       Right envs' -> lift $ modify (setEnv envs')
 
-doTypeOf :: ExpI -> Repl ()
+doTypeOf :: ExpSI -> Repl ()
 doTypeOf e = do
     (tEnv, tState, _) <- lift $ gets stateEnv
     ms <- liftIO $ typeOfWithEnv tEnv tState e

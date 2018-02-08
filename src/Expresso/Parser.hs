@@ -26,18 +26,20 @@ import Expresso.Utils
 ------------------------------------------------------------
 -- Resolve imports
 
-resolveImports :: ExpI -> ExceptT String IO Exp
-resolveImports = cataM alg where
-  alg (InR (Constant (Import path)) :*: _) = do
-      res <- ExceptT $ readFile path >>= return . parse path
-      resolveImports res
-  alg (InL e :*: pos) = return $ Fix (e :*: pos)
-  alg _ = error "safe: GHC pattern synonym limitation"
+
+resolveImports_ :: ExpSI -> ExceptT String IO ExpS
+resolveImports_ = undefined
+{- resolveImports_ = cataM alg where -}
+  {- alg (InR (Constant (Import path)) :*: _) = do -}
+      {- res <- ExceptT $ readFile path >>= return . parse path -}
+      {- resolveImports_ res -}
+  {- alg (InL e :*: pos) = return $ Fix (e :*: pos) -}
+  {- alg _ = error "safe: GHC pattern synonym limitation" -}
 
 ------------------------------------------------------------
 -- Parser
 
-parse :: SourceName -> String -> Either String ExpI
+parse :: SourceName -> String -> Either String ExpSI
 parse src = showError . P.parse (whiteSpace *> pExp <* P.eof) src
 
 pExp     = addTypeAnnot
@@ -210,7 +212,7 @@ pLetBind = try (RecWildcard <$ reservedOp "{..}") <|> pBind
 
 pFieldPuns = braces $ pRecordLabel `sepBy` comma
 
-data Entry = Extend Label ExpI | Update Label ExpI
+data Entry = Extend Label ExpSI | Update Label ExpSI
 
 pRecord = (\pos -> fromMaybe (mkRecordEmpty pos))
        <$> getPosition
@@ -227,7 +229,7 @@ pDifferenceRecord = mkDifferenceRecord
     <*> (try (reservedOp "{|") *> (pRecordEntry `sepBy1` comma)
            <* reservedOp "|}")
 
-mkDifferenceRecord :: Pos -> [Entry] -> ExpI
+mkDifferenceRecord :: Pos -> [Entry] -> ExpSI
 mkDifferenceRecord pos entries =
     withPos pos $ ELam (Arg "#r") $
         foldr (mkRecordExtend pos) (withPos pos $ EVar "#r") entries
@@ -279,19 +281,19 @@ pList = brackets pListBody
         <*> ((,) <$> getPosition <*> pExp) `sepBy` comma
         <?> "list expression"
 
-mkImport :: Pos -> FilePath -> ExpI
+mkImport :: Pos -> FilePath -> ExpSI
 mkImport pos path = withAnn pos $ InR $ K $ Import path
 
-mkInteger :: Pos -> Integer -> ExpI
+mkInteger :: Pos -> Integer -> ExpSI
 mkInteger pos = mkPrim pos . Int
 
-mkDouble :: Pos -> Double -> ExpI
+mkDouble :: Pos -> Double -> ExpSI
 mkDouble pos = mkPrim pos . Dbl
 
-mkCase :: Pos -> ExpI -> ExpI -> ExpI
+mkCase :: Pos -> ExpSI -> ExpSI -> ExpSI
 mkCase pos scrutinee caseF = mkApp pos caseF [scrutinee]
 
-mkCaseAlt :: Pos -> Entry -> ExpI -> ExpI
+mkCaseAlt :: Pos -> Entry -> ExpSI -> ExpSI
 mkCaseAlt pos (Extend l altLamE) contE =
     mkApp pos (mkPrim pos $ VariantElim l) [altLamE, contE]
 mkCaseAlt pos (Update l altLamE) contE =
@@ -303,27 +305,27 @@ mkCaseAlt pos (Update l altLamE) contE =
   where
     mkEmbed e = mkApp pos (mkPrim pos $ VariantEmbed l) [e]
 
-mkVariant :: Pos -> Label -> ExpI
+mkVariant :: Pos -> Label -> ExpSI
 mkVariant pos l = mkPrim pos $ VariantInject l
 
-mkVariantEmbed :: Pos -> [(Pos , Label)] -> ExpI
+mkVariantEmbed :: Pos -> [(Pos , Label)] -> ExpSI
 mkVariantEmbed pos ls =
     withPos pos $ ELam (Arg "#r") $
         foldr f (withPos pos $ EVar "#r") ls
   where
     f (pos, l) k = mkApp pos (mkPrim pos $ VariantEmbed l) [k]
 
-mkLam :: Pos -> [Bind Name] -> ExpI -> ExpI
+mkLam :: Pos -> [Bind Name] -> ExpSI -> ExpSI
 mkLam pos bs e =
     foldr (\b e -> withPos pos (ELam b e)) e bs
 
-mkAnnLam :: Pos -> [(Bind Name, Type)] -> ExpI -> ExpI
+mkAnnLam :: Pos -> [(Bind Name, Type)] -> ExpSI -> ExpSI
 mkAnnLam pos bs e =
     foldr (\(b, t) e -> withPos pos (EAnnLam b t e)) e bs
 
 -- | signature section
 --   (:T) becomes (x -> x : T -> T)
-mkSigSection :: Pos -> Type -> ExpI
+mkSigSection :: Pos -> Type -> ExpSI
 mkSigSection pos ty =
     withPos pos $ EAnn (mkLam pos [Arg "x"] (mkVar pos "x")) ty'
   where
@@ -332,53 +334,55 @@ mkSigSection pos ty =
             withAnn pos (TForAllF tvs (withAnn pos (TFunF t t)))
         t -> withAnn (getAnn t) (TFunF t t)
 
-mkVar :: Pos -> Name -> ExpI
+mkVar :: Pos -> Name -> ExpSI
 mkVar pos name = withPos pos (EVar name)
 
-mkLet :: (Pos, (Bind Name, ExpI)) -> ExpI -> ExpI
+mkLet :: (Pos, (Bind Name, ExpSI)) -> ExpSI -> ExpSI
 mkLet (pos, (b, e1)) e2 = withPos pos (ELet b e1 e2)
 
-mkTertiaryOp :: Pos -> Prim -> ExpI -> ExpI -> ExpI -> ExpI
+mkTertiaryOp :: Pos -> Prim -> ExpSI -> ExpSI -> ExpSI -> ExpSI
 mkTertiaryOp pos p x y z = mkApp pos (mkPrim pos p) [x, y, z]
 
-mkBinOp :: Pos -> Prim -> ExpI -> ExpI -> ExpI
+mkBinOp :: Pos -> Prim -> ExpSI -> ExpSI -> ExpSI
 mkBinOp pos p x y = mkApp pos (mkPrim pos p) [x, y]
 
-mkUnaryOp  :: Pos -> Prim -> ExpI -> ExpI
+mkUnaryOp  :: Pos -> Prim -> ExpSI -> ExpSI
 mkUnaryOp pos p x = mkApp pos (mkPrim pos p) [x]
 
-mkRecordSelect :: Pos -> ExpI -> Label -> ExpI
+mkRecordSelect :: Pos -> ExpSI -> Label -> ExpSI
 mkRecordSelect pos r l = mkApp pos (mkPrim pos $ RecordSelect l) [r]
 
-mkRecordExtend :: Pos -> Entry -> ExpI -> ExpI
+mkRecordExtend :: Pos -> Entry -> ExpSI -> ExpSI
 mkRecordExtend pos (Extend l e) r =
     mkApp pos (mkPrim pos $ RecordExtend l) [e, r]
 mkRecordExtend pos (Update l e) r =
     mkApp pos (mkPrim pos $ RecordExtend l) [e, mkRecordRestrict pos r $ Just l]
 
-mkRecordEmpty :: Pos -> ExpI
+mkRecordEmpty :: Pos -> ExpSI
 mkRecordEmpty pos = mkPrim pos RecordEmpty
 
-mkRecordRestrict :: Pos -> ExpI -> Maybe Label -> ExpI
+mkRecordRestrict :: Pos -> ExpSI -> Maybe Label -> ExpSI
 mkRecordRestrict pos e = maybe e $ \l -> mkApp pos (mkPrim pos $ RecordRestrict l) [e]
 
 mkFieldPun :: Pos -> Label -> Entry
 mkFieldPun pos l = Extend l (withPos pos $ EVar l)
 
-mkListCons :: (Pos, ExpI) -> ExpI -> ExpI
+mkListCons :: (Pos, ExpSI) -> ExpSI -> ExpSI
 mkListCons (pos, x) xs = mkApp pos (mkPrim pos ListCons) [x, xs]
 
-mkListEmpty :: Pos -> ExpI
+mkListEmpty :: Pos -> ExpSI
 mkListEmpty pos = mkPrim pos ListEmpty
 
-mkApp :: Pos -> ExpI -> [ExpI] -> ExpI
+mkApp :: Pos -> ExpSI -> [ExpSI] -> ExpSI
 mkApp pos f = foldl (\g -> withPos pos . EApp g) f
 
-mkPrim :: Pos -> Prim -> ExpI
+mkPrim :: Pos -> Prim -> ExpSI
 mkPrim pos p = withPos pos $ EPrim p
 
-withPos :: Pos -> ExpITopLevel -> ExpI
-withPos pos = withAnn pos . InL
+withPos :: Pos -> ExpSITopLevel -> ExpSI
+withPos pos =
+  undefined
+  -- withAnn pos . InL
 
 ------------------------------------------------------------
 -- Parsers for type annotations

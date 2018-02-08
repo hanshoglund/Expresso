@@ -86,6 +86,10 @@ module Expresso.Eval(
   -- * References
   , Ref(..)
   , Referable(..)
+
+  -- * Static evaluation
+  , MonadEvalStatic(..)
+  , evalStatic
 )
 where
 
@@ -1638,8 +1642,23 @@ instance (Referable a, FromValue a) => FromValue (Ref a) where
 -- | Rewrite an expression by evaluating  all 'static' blocks. The resulting value is passed to 'static'.
 evalStatic :: MonadEvalStatic f => ExpS -> f Exp
 evalStatic = error "FIXME static"
+-- TODO make sure this also typechecks before evaluating...
 
 class MonadEval f => MonadEvalStatic f where
   runStatic :: Value f -> f Exp
 
+-- TODO implement properly
+-- TODO generalize this to an arbitrary (MonadBlobStore, MonadFileSystem, MonadHTTP).
+instance MonadEvalStatic IO where
+  {- runStatic v = case v of -}
+
+
+--       static (Web { url = "http://", format = Zip {}, hash = Sha256 "167612736767a67aaaaba7" })
+--        :  <Static : <File : {url : [Char], format : <Zip : {} >, hash : <Sha256 : [Char] >} > >
+--
+--       static (Local { File { path= "/foo/bar" }})
+--
+--       static (Local { Directory { path= "/foo/bar" }})
+--
+--       static (Local { ForgeBinary { name = "scl-ui" } })
 
