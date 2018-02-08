@@ -32,6 +32,7 @@ resolveImports = cataM alg where
       res <- ExceptT $ readFile path >>= return . parse path
       resolveImports res
   alg (InL e :*: pos) = return $ Fix (e :*: pos)
+  alg _ = error "safe: GHC pattern synonym limitation"
 
 ------------------------------------------------------------
 -- Parser

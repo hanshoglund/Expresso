@@ -19,13 +19,13 @@ module Expresso.Utils
   module Data.Functor.Identity,
   module Data.Functor.Product,
   module Data.Functor.Sum,
+  module Data.Functor.Classes,
 #if __GLASGOW_HASKELL__ <= 708
   module Data.Functor.Constant,
 #else
   module Data.Functor.Const,
   pattern Constant,
 #endif
-  module Data.Functor.Classes,
   Fix(..),
   K,
   pattern K,

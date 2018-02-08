@@ -40,7 +40,7 @@ import Data.Traversable
 type ExpI  = Fix ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
 -- | Expression with imports resolved.
 type Exp   = Fix ExpF'
-
+type ExpS  = Fix ExpF'
 
 type R     = String
 -- | Remote expression.

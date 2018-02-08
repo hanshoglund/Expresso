@@ -477,6 +477,7 @@ eval env e = cata alg e env
       evalRemote mempty exp
     alg (EPrim p :*: Constant pos)    _   = pure $ evalPrim pos p
     alg (EAnn e _ :*: _)       env = e env
+    alg _ _ =  error "safe: GHC pattern synonym limitation"
 
 {- evalWithCache r env exp = eval env exp -}
 

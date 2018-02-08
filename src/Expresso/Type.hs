@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE StandaloneDeriving #-}
 module Expresso.Type where
 
@@ -77,9 +78,13 @@ data TypeF r
 
 deriving instance Show r => Show (TypeF r)
 
-instance Show1 TypeF where
   {- showsPrec1 n x = (++) . show $ ppType' n (inj x) -}
+instance Show1 TypeF where
+#if __GLASGOW_HASKELL__ <= 708
   showsPrec1 = showsPrec
+#else
+  liftShowsPrec showsPrec showList _ _ = ("<Type>"<>)
+#endif
 
 instance A.ToJSON1 TypeF
 instance A.FromJSON1 TypeF

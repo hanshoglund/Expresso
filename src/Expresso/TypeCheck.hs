@@ -347,6 +347,8 @@ tcRho = cata alg
         checkSigma pos e annT
         instSigma pos annT mty
 
+    alg _ _ = error "safe: not detected due to GHC pattern synonym limitation"
+
 inferSigma :: Pos -> Rho -> TI Sigma
 inferSigma pos rho = do
     exp_ty  <- substType rho
