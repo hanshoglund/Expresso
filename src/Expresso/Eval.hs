@@ -593,6 +593,14 @@ evalPrim pos p = case p of
             VInt i -> return $ VInt $ negate i
             VDbl d -> return $ VDbl $ negate d
             _      -> failOnValues pos [v]
+    IntToChar      -> mkStrictLam $ \v ->
+        case v of
+            VInt i -> return $ VChar $ toEnum (fromInteger i `mod` 1114112)
+            _      -> failOnValues pos [v]
+    CharToInt      -> mkStrictLam $ \v ->
+        case v of
+            VChar i -> return $ VInt $ fromIntegral $ fromEnum i
+            _      -> failOnValues pos [v]
 
     Mod           -> mkStrictLam $ \v1 -> return $ mkStrictLam $ \v2 ->
         case (v1, v2) of

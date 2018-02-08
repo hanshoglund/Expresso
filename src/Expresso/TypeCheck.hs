@@ -492,6 +492,10 @@ tcPrim pos prim = annotate pos $ case prim of
       unOp  $ newTyVar (CStar CNum) 'a'
   Mod                    ->
     _TFun _TInt (_TFun _TInt _TInt)
+  IntToChar              ->
+    _TFun _TInt _TChar
+  CharToInt              ->
+    _TFun _TChar _TInt
   FixPrim                ->
     let a = newTyVar CNone 'a'
     in _TForAll [a] $ _TFun (_TFun (_TVar a) (_TVar a)) (_TVar a)

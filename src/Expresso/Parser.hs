@@ -167,6 +167,9 @@ pPrimFun = msum
   , fun "mod"     Mod
   , fun "absurd"  Absurd
 
+  , fun "charToInt" CharToInt
+  , fun "intToChar" IntToChar
+
   , fun "packBlob"    PackBlob
   , fun "unpackBlob"  UnpackBlob
   , fun "packText"    PackText

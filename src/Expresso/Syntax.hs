@@ -110,6 +110,8 @@ data Prim_ f
   | Abs
   | Neg
   | Mod
+  | CharToInt
+  | IntToChar
   | Cond
   | FixPrim
   | FwdComp

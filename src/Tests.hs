@@ -179,26 +179,22 @@ conversionTests = testGroup
   "Type conversions"
   [
 
-  -- Prism Integer Char
-    hasValue "(import \"Prelude.x\").mapMaybe charToInt (intToChar 2)" (Just (2 :: Integer))
-  , hasValue "intToChar 43" (Just '+')
+  -- Integer Char
+    hasValue "charToInt (intToChar 2)" (2 :: Integer)
+  , hasValue "intToChar 43" '+'
 
-  -- Iso   [{}} Integer
+  -- [{}} Integer
   , hasValue "length [{},{}]" (2 :: Integer)
   , hasValue "repeat {} 2" (replicate 2 ())
-  -- Iso   [Char] Text
+  -- [Char] Text
   , hasValue "['a','b']" ("ab"::String)
   , hasValue "\"ab\"" ("ab"::String)
 
-  -- Iso   [Word8]   Blob (if we had Word8)
-  -- NOTE: There's no Word8 type...
-
-  -- Prism [Integer] Blob
-  -- NOTE: The HasValue instance for Blob may involve downloading...
-  --  TODO add test cases for this as well...
+  -- [Integer] Blob
   , hasValue "packBlob [102,111,111]" ("foo" :: LBS.ByteString)
   , hasValue "unpackBlob (packBlob [102,110,111])" [102,110,111::Integer]
-  {- , hasValue "unpackBlob #\"foo\"" [102,111,111::Integer] -}
+
+  , hasValue "foldr (u x -> x + 1) 0 [1,2,3]" (3 :: Integer)
   ]
 
 listTests = testGroup
