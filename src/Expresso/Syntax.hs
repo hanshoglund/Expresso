@@ -26,6 +26,7 @@ import Expresso.Type
 import Expresso.Utils
 import Data.Void
 
+import Control.Applicative
 import GHC.Generics(Generic)
 import qualified Data.Aeson as A
 
@@ -36,7 +37,7 @@ import Data.Traversable
 
 
 -- | Expression with imports unresolved.
-type ExpI  = Fix ((ExpF Name Bind Type I :+: K Import) :*: K Pos)
+type ExpI  = Fix ((ExpF Name Bind Type I `Sum` K Import) `Product` K Pos)
 -- | Expression with imports resolved.
 type Exp   = Fix ExpF'
 
@@ -49,9 +50,11 @@ newtype Import = Import { unImport :: FilePath }
 
 -- TODO move
 instance A.FromJSON Pos where
-  parseJSON = error "FIXME fromJSON Pos"
+  parseJSON _ = pure dummyPos -- error "FIXME fromJSON Pos"
+instance A.ToJSON Pos where
+  toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
 
-type ExpF' = ExpF Name Bind Type I :*: K Pos
+type ExpF' = ExpF Name Bind Type I `Product` K Pos
 data ExpF v b t p r
   = EVar  v
   | EPrim (Prim_ p)

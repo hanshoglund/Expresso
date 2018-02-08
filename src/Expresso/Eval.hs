@@ -103,7 +103,8 @@ import Data.Map (Map)
 import Data.HashMap.Strict (HashMap)
 import Data.Coerce
 import Data.Maybe
-import Data.Monoid
+import Data.Monoid hiding (Sum)
+import qualified Data.Monoid as Monoid
 import Data.Ord
 import Data.Text (Text)
 import qualified Data.Map as Map
@@ -156,9 +157,9 @@ class Monad f => MonadMonoVar (f :: * -> *) where
   writeMonoVar :: Key f -> Val f -> f ()
 
 -- TODO move to strats-orphans...
-instance Enum a => Enum (Sum a) where
-  toEnum = Sum . toEnum
-  fromEnum = fromEnum . getSum
+instance Enum a => Enum (Monoid.Sum a) where
+  toEnum = Monoid.Sum . toEnum
+  fromEnum = fromEnum . Monoid.getSum
 
 -- TODO wrap key to make this safer...
 instance (ApplicativeMonad f, Ord k, Monoid k, Enum k) => MonadMonoVar (StateT (Map k v) f) where
@@ -182,7 +183,7 @@ instance (ApplicativeMonad f, MonadMonoVar f) => MonadMonoVar (ExceptT e f) wher
   writeMonoVar k v = ExceptT $ fmap Right $ writeMonoVar k v
 
 instance (ApplicativeMonad f) => MonadMonoVar (EvalT f) where
-  type Key (EvalT f) = Sum Int
+  type Key (EvalT f) = Monoid.Sum Int
   type Val (EvalT f) = Maybe (Value (EvalT f))
   newMonoVar v = EvalT $ newMonoVar v
   readMonoVar v = EvalT $ readMonoVar v
@@ -266,7 +267,7 @@ runEvIO' = runEvalPrimT_
 newtype EvalT (f :: * -> *) a = EvalT { runEvalT_ ::
     ExceptT String
       (StateT
-        (Map (Sum Int) (Maybe (Value (EvalT f)))) f)
+        (Map (Monoid.Sum Int) (Maybe (Value (EvalT f)))) f)
       a
       }
 instance MonadTrans EvalT where

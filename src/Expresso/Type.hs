@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Expresso.Type where
 
 import Prelude hiding (foldr, concatMap)
@@ -32,7 +33,7 @@ import qualified Data.Set as S
 
 import Data.Foldable
 import Data.Traversable
-import Data.Monoid
+import Data.Monoid hiding (Sum, Product)
 
 import GHC.Generics (Generic, Generic1)
 import qualified Data.Aeson as A
@@ -44,7 +45,7 @@ type Pos    = SourcePos
 type Label  = String
 type Name   = String
 
-type Type = Fix (TypeF :*: K Pos)
+type Type = Fix (TypeF `Product` K Pos)
 type Type' = Fix TypeF
 
 type Sigma = Type
@@ -72,8 +73,15 @@ data TypeF r
   | TVariantF r
   | TRowEmptyF
   | TRowExtendF Label r r
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic1)
+  deriving (Eq, Ord, Functor, Foldable, Traversable, Generic1)
 
+deriving instance Show r => Show (TypeF r)
+
+instance Show1 TypeF where
+  {- showsPrec1 n x = (++) . show $ ppType' n (inj x) -}
+  showsPrec1 = showsPrec
+
+instance A.ToJSON1 TypeF
 instance A.FromJSON1 TypeF
 
 type Uniq = Int
@@ -84,6 +92,7 @@ data Flavour
   | Wildcard -- a type wildcard
   deriving (Eq, Ord, Show, Generic)
 
+instance A.ToJSON Flavour
 instance A.FromJSON Flavour
 
 data TyVar = TyVar
@@ -93,6 +102,7 @@ data TyVar = TyVar
   , tyvarConstraint :: Constraint
   } deriving (Eq, Ord, Show, Generic)
 
+instance A.ToJSON TyVar
 instance A.FromJSON TyVar
 
 data MetaTv = MetaTv  -- can unify with any tau-type
@@ -101,6 +111,7 @@ data MetaTv = MetaTv  -- can unify with any tau-type
   , metaConstraint  :: Constraint
   } deriving (Eq, Ord, Show, Generic)
 
+instance A.ToJSON MetaTv
 instance A.FromJSON MetaTv
 
 -- | Type variable constraints
@@ -111,6 +122,7 @@ data Constraint
   | CStar StarHierarchy
   deriving (Eq, Ord, Show, Generic)
 
+instance A.ToJSON Constraint
 instance A.FromJSON Constraint
 -- | A simple hierarchy. i.e. Num has Ord and Eq, Ord has Eq.
 data StarHierarchy
@@ -119,6 +131,7 @@ data StarHierarchy
   | CNum
   deriving (Eq, Ord, Show, Generic)
 
+instance A.ToJSON StarHierarchy
 instance A.FromJSON StarHierarchy
 
 {- getMonomorphic :: Scheme -> Maybe Type -}
