@@ -53,7 +53,10 @@ type ExpR  = ExpF_ Name Bind Type (K R) R
 -- | Remote reference.
 type R     = String
 
+-- | An expression to  be evaluated at compile-time.
+newtype Static = Static { unStatic :: Exp }
 
+-- | Local include of another expression.
 newtype Import = Import { unImport :: FilePath }
 
 -- TODO move
@@ -62,9 +65,10 @@ instance A.FromJSON Pos where
 instance A.ToJSON Pos where
   toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
 
-type ExpF' = ExpF_ Name Bind Type I `Product` K Pos
-type ExpFS = ExpF_ Name Bind Type I `Product` K Pos
-type ExpFI = (ExpF_ Name Bind Type I `Sum` K Import) `Product` K Pos
+type ExpF'  = ExpF_ Name Bind Type I `Product` K Pos
+type ExpFS  = (ExpF_ Name Bind Type I `Sum` K Static)`Product` K Pos
+type ExpFI  = (ExpF_ Name Bind Type I `Sum` K Import) `Product` K Pos
+type ExpFSI = (ExpF_ Name Bind Type I `Sum` K Static `Sum` K Import) `Product` K Pos
 
 data ExpF_ v b t p r
   = EVar  v

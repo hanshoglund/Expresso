@@ -1637,7 +1637,7 @@ instance (Referable a, FromValue a) => FromValue (Ref a) where
 
 -- | Rewrite an expression by evaluating  all 'static' blocks. The resulting value is passed to 'static'.
 evalStatic :: MonadEvalStatic f => ExpS -> f Exp
-evalStatic = pure
+evalStatic = error "FIXME static"
 
 class MonadEval f => MonadEvalStatic f where
   runStatic :: Value f -> f Exp
