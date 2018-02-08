@@ -50,6 +50,7 @@ addTypeAnnot pos e (Just t) = withPos pos (EAnn e t)
 addTypeAnnot _   e Nothing  = e
 
 pExp'    = pImport
+       <|> pStatic
        <|> pLam
        <|> pAnnLam
        <|> pLet
@@ -62,6 +63,11 @@ pImport  = mkImport
        <$> getPosition
        <*> (reserved "import" *> stringLiteral)
        <?> "import"
+
+pStatic  = mkStatic
+       <$> getPosition
+       <*> (reserved "static" *> pExp)
+       <?> "static"
 
 pLet     = reserved "let" *>
            (flip (foldr mkLet) <$> (semiSep1 ((,) <$> getPosition <*> pLetDecl))
@@ -282,6 +288,12 @@ pList = brackets pListBody
 
 mkImport :: Pos -> FilePath -> ExpSI
 mkImport pos path = withAnn pos $ InR $ K $ Import path
+
+mkStatic :: Pos -> ExpSI -> ExpSI
+mkStatic pos exp = withAnn pos $ InL $ InR $ K $ Static (destatic exp)
+
+destatic :: ExpSI -> Exp
+destatic = undefined
 
 mkInteger :: Pos -> Integer -> ExpSI
 mkInteger pos = mkPrim pos . Int
@@ -537,7 +549,7 @@ languageDef = emptyDef
                          , "==", "/=", ">", ">=", "<", "<="
                          , "&&", "||", ":", "=>"
                          ]
-    , P.reservedNames  = [ "let", "in", "if", "then", "else", "case", "of"
+    , P.reservedNames  = [ "let", "in", "if", "then", "else", "case", "of", "static"
                          , "True", "False", {-"Just", "Nothing",-} "forall"
                          , "Eq", "Ord", "Num"
                          ]
