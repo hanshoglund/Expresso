@@ -1639,10 +1639,34 @@ instance (Referable a, FromValue a) => FromValue (Ref a) where
 
 
 
--- | Rewrite an expression by evaluating  all 'static' blocks. The resulting value is passed to 'static'.
-evalStatic :: MonadEvalStatic f => ExpS -> f Exp
-evalStatic = error "FIXME static"
--- TODO make sure this also typechecks before evaluating...
+-- | Rewrite an expression by evaluating  all 'static' blocks. The resulting value is passed to 'runStatic'.
+evalStatic :: forall f . MonadEvalStatic f => ExpS -> f Exp
+evalStatic = cata g
+  where
+    g :: ExpFS (f Exp) -> f Exp
+    g (InR (K (Static (exp :: Exp)))  :*: K pos) = do
+      v <- eval mempty exp
+      -- TODO make sure this also typechecks before evaluating?
+      runStatic pos v
+    -- TODO can the below be refactored?
+    g (InL (EVar x)  :*: K pos) = pure (Fix $ EVar x :*: K pos)
+    g (InL (EPrim x)  :*: K pos) = pure (Fix $ EPrim x :*: K pos)
+    g (InL (EApp f x)  :*: K pos) = do
+      f' <- f
+      x' <- x
+      pure (Fix $ EApp f' x' :*: K pos)
+    g (InL (ELam b x) :*: K pos) = do
+      x' <- x
+      pure $ Fix $ ELam b x' :*: K pos
+    g (InL (EAnnLam b t x) :*: K pos) = do
+      x' <- x
+      pure $ Fix $ EAnnLam b t x' :*: K pos
+    g (InL (ERef x t)  :*: K pos) = do
+      pure (Fix $ ERef x t :*: K pos)
+    g (InL (EAnn x t)  :*: K pos) = do
+      x' <- x
+      pure (Fix $ EAnn x' t :*: K pos)
+    g _ = error "safe: not detected due to GHC pattern synonym limitation 3"
 
 class MonadEval f => MonadEvalStatic f where
   runStatic :: Pos -> Value f -> f Exp
