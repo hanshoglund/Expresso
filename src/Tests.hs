@@ -310,57 +310,74 @@ annotationTests = testGroup
 
   -- In a client/server setting, wer can think of the server as providing a single funtion to be called
   -- We want that function to be a supertype of whatever the client expects
+  --
+  -- TODO we can do this mechanically by taking two (monomorphic?) types and *generalizing* on the recieving side
+  -- When is this safe?
+  --
 
-
-  -- Server allowing client to handle returns case L2 that will never be sent
-  , "Int -> <L: Int, R : Char>"
+  -- Server allowing client to handle returns case L
+  , "                             Int -> <L: Int, R : Char>"
         `isSubtypeOf`
-    "forall r. (r\\R) => (Int -> <R : Char | r>)"
-  , "Int -> <L: Int, R : Char>"
+    "forall r. (r\\R) =>          Int -> <R : Char | r>"
+  -- Same client, server now sending both L and R
+  , "                             Int -> <L: Int, R : Char>"
         `isSubtypeOf`
-    "forall r. (r\\L, r\\R) => (Int -> <L: Int, R : Char | r>)"
-  , "Int -> <L: Int, R : Char>"
+    "forall r. (r\\L, r\\R) =>    Int -> <L: Int, R : Char | r>"
+  -- Server disallowing client to handle extra case
+  , "                             Int -> <L: Int, R : Char>"
         `isNotSubtypeOf`
-    "Int -> <R : Char>"
+    "                             Int -> <R : Char>"
 
   -- Server allowing client to pass parameter that will never be used
-  , "{x:Int,y:Bool} -> Int"
+  , "                             {x:Int,y:Bool} -> Int"
         `isSubtypeOf`
-    "forall r . (r\\x) => {x:Int | r} -> Int"
+    "forall r . (r\\x) =>         {x:Int | r} -> Int"
   -- Same client with an upgraded server using Bool
-  , "{x:Int,y:Bool} -> Int"
+  , "                             {x:Int,y:Bool} -> Int"
         `isSubtypeOf`
-    "forall r . (r\\x, r\\y) => {x:Int, y:Bool | r} -> Int"
+    "forall r . (r\\x, r\\y) =>   {x:Int, y:Bool | r} -> Int"
   -- Same client with an incomaptible server, not allowed!
-  , "{x:Int,y:Bool} -> Int"
+  , "                             {x:Int,y:Bool} -> Int"
         `isNotSubtypeOf`
-    "forall r . (r\\x, r\\y) => {x:Int, y:Int | r} -> Int"
-
-  -- The *normal* case:
-  --   Reciever accepts open records/closed variants (e.g. handle known fields, ignore rests, refuse to handle unknown cases)
-  --   Sender provides closed records/open variants
-  --
-  -- When modelling client server as a function, we have on LHS client sending, on RHS server sending
-
-  -- OK: client sending an extra field
-  -- OK: client recieving an extra field
-  -- BAD: server missing a field in request
-  -- BAD: server sending a case not handled by client
-  -- OK: server sending fewer cases than expected by client
+    "forall r . (r\\x, r\\y) =>   {x:Int, y:Int | r} -> Int"
 
 
-  -- For *infrastructure* we are not restricted to client/server, instead the client sends a complete value
-  -- We are "fitting" the client type into a "hole" of some shape
-  --
-  -- The client type will normally be inferred and should be the larger type
-  -- The infrastructure will expect a single concrete type that the client must satisfy
+  -- NOTE as we are incling (infra -> client) return here.
+  -- IN the 'generalization allwoed matrix', we have to invert the order for the outer arrow...
+  ,
+    "                            ({hosts:[Char]} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char>"
+        `isSubtypeOf`
+    (
+    "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
+    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char|r2}]) -> <Ok:{}, Err:Char | r3>"
+    )
+  -- OK: We can generalize a record in a negative position
+  ,
+    "                            ({hosts:[Char],info:Char} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char>"
+        `isSubtypeOf`
+    (
+    "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
+    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char | r3>"
+    )
+  -- OK: We can generalize a variant in a positive position
+  -- -- FIXME doesn't make sense, get rid of outer arrow...
+  ,
+    "                            ({hosts:[Char]} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char, Warn:Char>"
+        `isSubtypeOf`
+    (
+    "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
+    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char | r3>"
+    )
+  -- Not OK: We can't generalize a record in a positive position
+  ,
+    "                            ({hosts:[Char]} -> [{exe:Char,foo:Int,args:Char}]) -> <Ok:{}, Err:Char, Warn:Char>"
+        `isNotSubtypeOf`
+    (
+    "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
+    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char | r3>"
+    )
 
-
-  -- OK: Client and infra is the same
-  -- OK: Client and server have diverged, but are compatible
-  -- BAD: Client and server no longer compatible
   ]
-
 
 
 instance (f ~ ElField) => HasType (Rec f '[]) where
