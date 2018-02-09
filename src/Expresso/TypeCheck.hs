@@ -27,6 +27,8 @@ module Expresso.TypeCheck (
     , initTIState
     , TI
     , TIState
+    -- * Low-level
+    , unify
     ) where
 
 import qualified Data.List as L

@@ -240,6 +240,7 @@ lazyTests = testGroup
   [ hasValue "(import \"Prelude.x\").maybe (error \"bang!\") (x -> x == 42) (Just 42)" True
   , hasValue "{ x = error \"boom!\", y = 42 }.y" (42::Integer)
   , hasValue "case Bar (error \"fizzle!\") of { Foo{} -> 0 | otherwise -> 42 }" (42::Integer)
+  {- , failsAtRuntime "error \"_|_\"" -}
   ]
 
 
@@ -259,11 +260,17 @@ rankNTests = testGroup
 annotationTests = testGroup
   "Type annotations"
   [ hasValue
-         "let x = (error \"no!\" : forall a. a -> {foo : {}, z : a, bar : Double}) in True" True
+         "let x = (error \"_|_\" : forall a. a -> {foo : {}, z : a, bar : Double}) in True" True
   , hasValue
-         "let x = (error \"no!\" : forall a. a -> {foo : Text, z : a, bar : Double}) in True" True
+         "let x = (error \"_|_\" : forall a. a -> {foo : Text, z : a, bar : Double}) in True" True
   , hasValue
-         "let x = (error \"no!\" : forall a. a -> {foo : Blob, z : a, bar : Double}) in True" True
+         "let x = (error \"_|_\" : forall a. a -> {foo : Blob, z : a, bar : Double}) in True" True
+
+
+  , wellTyped
+         "(error\"_|_\" : forall r.(r\\L) => <L:{}   | r>) : <L:{},R:{}>"
+  , illTyped
+         "(error\"_|_\" : forall r.(r\\L) => <L:Bool | r>) : <L:{},R:{}>"
   ]
 
 
@@ -472,6 +479,13 @@ hasValue' str f expected = testCase str $ do
         Right x      -> do
           actual <- runEvalIO $ f x
           assertEqual "" expected actual
+
+wellTyped :: String -> TestTree
+wellTyped str = testCase str $ do
+    sch'e <- typeOfString str
+    case sch'e of
+        Left e  -> assertFailure $ "Should type-check, but got: " ++ show e
+        Right _ -> assertTrue
 
 illTyped :: String -> TestTree
 illTyped str = testCase str $ do
