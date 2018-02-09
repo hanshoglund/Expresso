@@ -271,6 +271,67 @@ annotationTests = testGroup
          "(error\"_|_\" : forall r.(r\\L) => <L:{}   | r>) : <L:{},R:{}>"
   , illTyped
          "(error\"_|_\" : forall r.(r\\L) => <L:Bool | r>) : <L:{},R:{}>"
+
+
+  , "Int"               `isSubtypeOf`         "forall a.a"
+
+
+
+  , "{foo:Int}"         `isSubtypeOf`         "forall r.(r\\foo) =>     {foo:Int|r}"
+  , "<L:{}>"            `isSubtypeOf`         "forall r.(r\\L)   =>     <L:{}|r>"
+
+
+
+
+
+
+  , "<L:{},R:{}>"       `isSubtypeOf`         "forall r.(r\\L) => <L:{}|r>"
+  , "{foo:Int,bar:Int}" `isSubtypeOf`         "forall r.(r\\foo) => {foo:Int|r}"
+  , "{foo:Int,bar:Int}" `isNotSubtypeOf`      "{foo:Int}"
+
+  -- TODO check variance works...
+
+  , "{foo:Int} -> <L:Int>"
+    `isSubtypeOf`
+    "forall r r1. (r\\foo, r1\\L) => {foo: Int|r} -> <L:Int | r1>"
+
+  , "{foo:Int} -> <L:Int>"
+    `isSubtypeOf`
+    "forall a r r1. (r\\foo, r1\\L) => {foo : a | r} -> <L : a | r1>"
+
+  , "<L:{},R:{}>"       `isSubtypeOf`         "forall r.(r\\L) => <L:{}|r>"
+  , "forall a.a"        `isSubtypeOf`         "forall a.a"
+
+
+  -- In a client/server setting, wer can think of the server as providing a single funtion to be called
+  -- We want that function to be a supertype of whatever the client expects
+
+
+  -- Server allowing client to handle returns case L2 that will never be sent
+  , "({foo : Int} -> Int) -> <L : Int, R : Char>"
+        `isSubtypeOf`
+    "forall r r2. (r\\foo, r2\\L, r2\\R) => (({foo: Int | r} -> Int) -> <L : Int, R : Char | r2>)"
+
+  , "({foo : Int} -> Int) -> <L : Int, L2: Int, R : Char>"
+        `isSubtypeOf`
+    "forall r r2. (r\\foo, r2\\L, r2\\R) => (({foo: Int | r} -> Int) -> <L : Int, R : Char | r2>)"
+
+  -- Server allowing client to pass parameter that will never be used
+  , "{x:Int,y:Bool} -> <L : Int, R : Char>"
+        `isSubtypeOf`
+    "forall r . (r\\x) => ({x:Int | r} -> <L : Int, R : Char>)"
+  -- Same client with an upgraded server using Bool
+  , "{x:Int,y:Bool} -> <L : Int, R : Char>"
+        `isSubtypeOf`
+    "forall r . (r\\x, r\\y) => ({x:Int, y:Bool | r} -> <L : Int, R : Char>)"
+  -- Same client with an incomaptible server, not allowed!
+  , "{x:Int,y:Bool} -> <L : Int, R : Char>"
+        `isNotSubtypeOf`
+    "forall r . (r\\x, r\\y) => ({x:Int, y:Int | r} -> <L : Int, R : Char>)"
+
+
+
+
   ]
 
 
@@ -479,6 +540,14 @@ hasValue' str f expected = testCase str $ do
         Right x      -> do
           actual <- runEvalIO $ f x
           assertEqual "" expected actual
+
+isSubtypeOf :: String -> String -> TestTree
+isSubtypeOf t1 t2 = wellTyped $
+  "(error\"_|_\" : "++t2++") : "++t1++""
+
+isNotSubtypeOf :: String -> String -> TestTree
+isNotSubtypeOf t1 t2 = illTyped $
+  "(error\"_|_\" : "++t2++") : "++t1++""
 
 wellTyped :: String -> TestTree
 wellTyped str = testCase str $ do
