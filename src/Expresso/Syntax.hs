@@ -31,6 +31,8 @@ import GHC.Generics(Generic, Generic1)
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Types as A
 
+import qualified Text.Parsec.Pos as P
+
 #if __GLASGOW_HASKELL__ <= 708
 import Data.Foldable
 import Data.Traversable
@@ -75,9 +77,21 @@ instance A.FromJSON Void where
 instance A.ToJSON Void where
   toJSON = absurd
 instance A.FromJSON Pos where
-  parseJSON _ = pure dummyPos -- error "FIXME fromJSON Pos"
+  parseJSON v = do
+    r <- A.parseJSON v
+    case r of
+      [n,l,c] -> do
+        n' <- A.parseJSON n
+        l' <- A.parseJSON l
+        c' <- A.parseJSON l
+        pure $ P.newPos n' l' c'
+      _ -> fail "Exptected Pos"
 instance A.ToJSON Pos where
-  toJSON _ = A.toJSON ("<pos>"::String) --error "FIXME fromJSON Pos"
+  toJSON pos = j [j $ P.sourceName pos, j $ P.sourceLine pos, j $ P.sourceColumn pos]
+    where
+      j :: A.ToJSON a => a -> A.Value
+      j = A.toJSON
+  {- ("<pos>"::String) --error "FIXME fromJSON Pos" -}
 
 type ExpF  = ExpF_ Name Bind Type I `Product` K Pos
 type ExpFS  = (ExpF_ Name Bind Type I `Sum` K Static)`Product` K Pos
@@ -124,6 +138,8 @@ instance A.ToJSON a => A.ToJSON (Bind a)
 
 type Prim = Prim_ I
 data Prim_ f
+  -- NF subset (TODO reflect in types)
+  -- Together with App these serialize all non-lambda, normalized expressions
   = Int Integer
   | Dbl Double
   | Bool Bool
@@ -137,6 +153,7 @@ data Prim_ f
   | RecordExtend Label
   | VariantInject Label
 
+  -- Non-NF subset:
   | Show
   | Trace
   | ErrorPrim
