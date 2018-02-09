@@ -273,8 +273,13 @@ annotationTests = testGroup
          "(error\"_|_\" : forall r.(r\\L) => <L:Bool | r>) : <L:{},R:{}>"
 
 
+  {- , "<>"                `isSubtypeOf`         "Int" -}
   , "Int"               `isSubtypeOf`         "forall a.a"
+  , "forall a.{x:a,y:Int}"
+                        `isSubtypeOf`         "forall a b.{x:a,y:b}"
 
+  , "forall a b.{x:a,y:b}"
+                        `isNotSubtypeOf`      "forall a b.{x:a,y:Int}"
 
 
   , "{foo:Int}"         `isSubtypeOf`         "forall r.(r\\foo) =>     {foo:Int|r}"
@@ -308,30 +313,52 @@ annotationTests = testGroup
 
 
   -- Server allowing client to handle returns case L2 that will never be sent
-  , "({foo : Int} -> Int) -> <L : Int, R : Char>"
+  , "Int -> <L: Int, R : Char>"
         `isSubtypeOf`
-    "forall r r2. (r\\foo, r2\\L, r2\\R) => (({foo: Int | r} -> Int) -> <L : Int, R : Char | r2>)"
-
-  , "({foo : Int} -> Int) -> <L : Int, L2: Int, R : Char>"
+    "forall r. (r\\R) => (Int -> <R : Char | r>)"
+  , "Int -> <L: Int, R : Char>"
         `isSubtypeOf`
-    "forall r r2. (r\\foo, r2\\L, r2\\R) => (({foo: Int | r} -> Int) -> <L : Int, R : Char | r2>)"
+    "forall r. (r\\L, r\\R) => (Int -> <L: Int, R : Char | r>)"
+  , "Int -> <L: Int, R : Char>"
+        `isNotSubtypeOf`
+    "Int -> <R : Char>"
 
   -- Server allowing client to pass parameter that will never be used
-  , "{x:Int,y:Bool} -> <L : Int, R : Char>"
+  , "{x:Int,y:Bool} -> Int"
         `isSubtypeOf`
-    "forall r . (r\\x) => ({x:Int | r} -> <L : Int, R : Char>)"
+    "forall r . (r\\x) => {x:Int | r} -> Int"
   -- Same client with an upgraded server using Bool
-  , "{x:Int,y:Bool} -> <L : Int, R : Char>"
+  , "{x:Int,y:Bool} -> Int"
         `isSubtypeOf`
-    "forall r . (r\\x, r\\y) => ({x:Int, y:Bool | r} -> <L : Int, R : Char>)"
+    "forall r . (r\\x, r\\y) => {x:Int, y:Bool | r} -> Int"
   -- Same client with an incomaptible server, not allowed!
-  , "{x:Int,y:Bool} -> <L : Int, R : Char>"
+  , "{x:Int,y:Bool} -> Int"
         `isNotSubtypeOf`
-    "forall r . (r\\x, r\\y) => ({x:Int, y:Int | r} -> <L : Int, R : Char>)"
+    "forall r . (r\\x, r\\y) => {x:Int, y:Int | r} -> Int"
+
+  -- The *normal* case:
+  --   Reciever accepts open records/closed variants (e.g. handle known fields, ignore rests, refuse to handle unknown cases)
+  --   Sender provides closed records/open variants
+  --
+  -- When modelling client server as a function, we have on LHS client sending, on RHS server sending
+
+  -- OK: client sending an extra field
+  -- OK: client recieving an extra field
+  -- BAD: server missing a field in request
+  -- BAD: server sending a case not handled by client
+  -- OK: server sending fewer cases than expected by client
 
 
+  -- For *infrastructure* we are not restricted to client/server, instead the client sends a complete value
+  -- We are "fitting" the client type into a "hole" of some shape
+  --
+  -- The client type will normally be inferred and should be the larger type
+  -- The infrastructure will expect a single concrete type that the client must satisfy
 
 
+  -- OK: Client and infra is the same
+  -- OK: Client and server have diverged, but are compatible
+  -- BAD: Client and server no longer compatible
   ]
 
 
