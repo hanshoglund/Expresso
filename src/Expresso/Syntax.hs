@@ -27,7 +27,7 @@ import Expresso.Utils
 import Data.Void
 
 import Control.Applicative
-import GHC.Generics(Generic)
+import GHC.Generics(Generic, Generic1)
 import qualified Data.Aeson as A
 
 #if __GLASGOW_HASKELL__ <= 708
@@ -69,8 +69,10 @@ instance A.ToJSON Import
 instance A.FromJSON Import
 
 -- TODO move
-instance A.FromJSON Void
-instance A.ToJSON Void
+instance A.FromJSON Void where
+  parseJSON _ = empty
+instance A.ToJSON Void where
+  toJSON = absurd
 instance A.FromJSON Pos where
   parseJSON _ = pure dummyPos -- error "FIXME fromJSON Pos"
 instance A.ToJSON Pos where
@@ -90,7 +92,11 @@ data ExpF_ v b t p r
   | ELet  (b v) r r
   | ERef  R t
   | EAnn  r t
-  deriving (Show, Functor, Foldable, Traversable, Generic)
+  deriving (Show, Functor, Foldable, Traversable, Generic, Generic1)
+
+instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t)
+  => A.ToJSON1 (ExpF_ v b t p)
+{- instance A.FromJSON1 (Ep -}
 
 {- instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t) => A.ToJSON1 (ExpF_ v b t p) -}
 instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r) => A.ToJSON (ExpF_ v b t p r)
@@ -171,6 +177,8 @@ data Prim_ f
   | VariantEmbed Label
   | VariantElim Label
   deriving (Generic)
+
+
 {- deriving instance Eq1 f => Eq (Prim_ f) -}
   {- (==) = eq1 -}
 {- deriving instance Ord1 f => Ord (Prim_ f) -}
