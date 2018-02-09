@@ -130,8 +130,10 @@ pattern Constant a = Const a
 
 #if __GLASGOW_HASKELL__ <= 708
 deriving instance Generic1 (CONST a)
-instance A.FromJSON a => A.FromJSON1 (CONST a)
-instance A.ToJSON a => A.ToJSON1 (CONST a)
+instance A.FromJSON a => A.FromJSON1 (CONST a) where
+  liftParseJSON _ _ x = Constant <$> A.parseJSON x
+instance A.ToJSON a => A.ToJSON1 (CONST a) where
+  liftToJSON _ _ (Constant x) = A.toJSON x
 instance A.FromJSON a => A.FromJSON (CONST a b) where
   parseJSON x = Constant <$> A.parseJSON x
 instance A.ToJSON a => A.ToJSON (CONST a b) where

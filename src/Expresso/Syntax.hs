@@ -29,6 +29,7 @@ import Data.Void
 import Control.Applicative
 import GHC.Generics(Generic, Generic1)
 import qualified Data.Aeson as A
+import qualified Data.Aeson.Types as A
 
 #if __GLASGOW_HASKELL__ <= 708
 import Data.Foldable
@@ -95,21 +96,21 @@ data ExpF_ v b t p r
   deriving (Show, Functor, Foldable, Traversable, Generic, Generic1)
 
 instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t)
-  => A.ToJSON1 (ExpF_ v b t p)
-{- instance A.FromJSON1 (Ep -}
+  => A.ToJSON1 (ExpF_ v b t p) where
+    liftToJSON     = A.genericLiftToJSON opts
+    liftToEncoding = A.genericLiftToEncoding opts
+instance (A.FromJSON (b v), A.FromJSON v, A.FromJSON1 p, A.FromJSON (p Void), A.FromJSON t)
+  => A.FromJSON1 (ExpF_ v b t p) where
+    liftParseJSON = A.genericLiftParseJSON opts
 
-{- instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t) => A.ToJSON1 (ExpF_ v b t p) -}
-instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r) => A.ToJSON (ExpF_ v b t p r)
-instance
-  (A.FromJSON (b v)
-  , A.FromJSON v
-  , A.FromJSON1 p
-  , A.FromJSON (p Void)
-  , A.FromJSON t
-  , A.FromJSON r
-  )
-    => A.FromJSON (ExpF_ v b t p r)
-{- deriving instance A.FromJSON (ExpF_ -}
+instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r)
+  => A.ToJSON (ExpF_ v b t p r) where
+  toEncoding = A.genericToEncoding opts
+instance (A.FromJSON (b v), A.FromJSON v, A.FromJSON1 p, A.FromJSON (p Void), A.FromJSON t, A.FromJSON r)
+  => A.FromJSON (ExpF_ v b t p r) where
+  parseJSON = A.genericParseJSON opts
+
+opts = A.defaultOptions { A.sumEncoding = A.ObjectWithSingleField }
 
 data Bind v
   = Arg v
@@ -129,6 +130,12 @@ data Prim_ f
   | Char Char
   | Text T.Text
   | Blob (f Void) -- We disallow embedding blobs in the AST directly, use ERef/ExpR to embed blobs
+
+  | ListEmpty
+  | ListCons
+  | RecordEmpty -- a.k.a. Unit
+  | RecordExtend Label
+  | VariantInject Label
 
   | Show
   | Trace
@@ -162,18 +169,13 @@ data Prim_ f
   {-  | NothingPrim -}
   {-  | MaybePrim -}
 
-  | ListEmpty
-  | ListCons
   | ListNull    -- needed if list elems have no equality defined
   | ListAppend
   | ListFoldr
 
-  | RecordEmpty -- a.k.a. Unit
   | RecordSelect Label
-  | RecordExtend Label
   | RecordRestrict Label
   | Absurd
-  | VariantInject Label
   | VariantEmbed Label
   | VariantElim Label
   deriving (Generic)
