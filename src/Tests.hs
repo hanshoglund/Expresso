@@ -46,6 +46,7 @@ unitTests = testGroup
   , relationalTests
   , constraintTests
   , rankNTests
+  , annotationTests
 
   , foreignTypeTests
   , foreignImportTests
@@ -186,8 +187,8 @@ conversionTests = testGroup
   , hasValue "intToChar 43" '+'
 
   -- [{}} Integer
-  , hasValue "length [{},{}]" (2 :: Integer)
-  , hasValue "repeat {} 2" (replicate 2 ())
+  {- , hasValue "length [{},{}]" (2 :: Integer) -}
+  {- , hasValue "repeat {} 2" (replicate 2 ()) -}
   -- [Char] Text
   , hasValue "\"ab\"" ("ab"::String) -- parse Haskell String as Expresso text for convenience
   , hasValue "\"ab\"" ("ab"::Text)
@@ -253,11 +254,16 @@ rankNTests = testGroup
   , hasValue "let f = g -> {l = g True, r = g 1} : (forall a. a -> a) -> {l : Bool, r : Int } in f (x -> x) == {l = True, r = 1}" True
   , hasValue
          "let f = (m : forall a. { reverse : [a] -> [a] |_}) -> {l = m.reverse [True, False], r = m.reverse (unpackText \"abc\") } in f (import \"Prelude.x\") == {l = [False, True], r = unpackText \"cba\"}" True
-  -- FIXME breaks due to parser bug
-  {- , hasValue -}
-         {- "let f = (g -> {l = g True, r = g 1}) ::: ((forall a. a -> a) -> {l : Bool, r : Int }) in f (x -> x) == {l = True, r = 1}" True -}
-  {- , hasValue -}
-         {- "let f = (m ::: forall a. { reverse : [a] -> [a] |_}) -> {l = m.reverse [True, False], r = m.reverse \"abc\" } in f (import \"Prelude.x\") == {l = [False, True], r = \"cba\"}" True -}
+  ]
+
+annotationTests = testGroup
+  "Type annotations"
+  [ hasValue
+         "let x = (error \"no!\" : forall a. a -> {foo : {}, z : a, bar : Double}) in True" True
+  , hasValue
+         "let x = (error \"no!\" : forall a. a -> {foo : Text, z : a, bar : Double}) in True" True
+  , hasValue
+         "let x = (error \"no!\" : forall a. a -> {foo : Blob, z : a, bar : Double}) in True" True
   ]
 
 

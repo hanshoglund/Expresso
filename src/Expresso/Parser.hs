@@ -418,6 +418,8 @@ pType' = pTVar
      <|> pTDbl
      <|> pTBool
      <|> pTChar
+     <|> pTBlob
+     <|> pTText
      <|> pTRecord
      <|> pTVariant
      <|> pTList
@@ -489,6 +491,8 @@ pTInt  = pTCon TIntF "Int"
 pTDbl  = pTCon TDblF "Double"
 pTBool = pTCon TBoolF "Bool"
 pTChar = pTCon TCharF "Char"
+pTBlob = pTCon TBlobF "Blob"
+pTText = pTCon TTextF "Text"
 
 pTFun = (\pos a b -> withAnn pos (TFunF a b))
      <$> getPosition
