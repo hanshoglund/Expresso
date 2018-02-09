@@ -35,7 +35,6 @@ import Data.Foldable
 import Data.Traversable
 #endif
 
-
 -- | Expression with imports unresolved.
 type ExpI  = Fix ExpFI
 -- | Expression with imports resolved at the top-level.
@@ -57,11 +56,21 @@ type R     = String
 
 -- | An expression to  be evaluated at compile-time.
 newtype Static = Static { unStatic :: Exp }
+  deriving (Generic)
+
+{- instance A.ToJSON Static -}
+{- instance A.FromJSON Static -}
 
 -- | Local include of another expression.
 newtype Import = Import { unImport :: FilePath }
+  deriving (Eq, Show, Generic)
+
+instance A.ToJSON Import
+instance A.FromJSON Import
 
 -- TODO move
+instance A.FromJSON Void
+instance A.ToJSON Void
 instance A.FromJSON Pos where
   parseJSON _ = pure dummyPos -- error "FIXME fromJSON Pos"
 instance A.ToJSON Pos where
@@ -83,6 +92,7 @@ data ExpF_ v b t p r
   | EAnn  r t
   deriving (Show, Functor, Foldable, Traversable, Generic)
 
+{- instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t) => A.ToJSON1 (ExpF_ v b t p) -}
 instance (A.ToJSON (b v), A.ToJSON v, A.ToJSON1 p, A.ToJSON (p Void), A.ToJSON t, A.ToJSON r) => A.ToJSON (ExpF_ v b t p r)
 instance
   (A.FromJSON (b v)
