@@ -344,14 +344,26 @@ annotationTests = testGroup
 
   -- NOTE as we are incling (infra -> client) return here.
   -- IN the 'generalization allwoed matrix', we have to invert the order for the outer arrow...
+  --
+  --   So the *real* rules are: When sending/generating an expression:
+  -- We can generalize products in negative, variants on positive (should be open)
+  -- We can't generalize variants in negative, variants on positive (should be closed)
+  --
+  -- Note this is consistent with standard inference rules, so:
+  --
+  --    λ> :t Service {name="pricing", args=[""], startTime = Now{}}
+  --    <Service : {name : Text, args : [Text], startTime : <Now : {} ...>} ...>
+  --
+  -- λ> :t x -> case x of { Service s -> let n = s.name : Text ; nn = s.args : [Text] ; nn = s.startTime in case nn of { Now {} -> {} } }
+  -- forall r r1. (r1\args\name\startTime) => <Service : {name : Text, args : [Text], startTime : <Now : {r}> | r1}> -> {}
   ,
     "                            ({hosts:[Char]} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char>"
         `isSubtypeOf`
     (
     "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
-    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char|r2}]) -> <Ok:{}, Err:Char | r3>"
+    "                            ({hosts:[Char]} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char>"
     )
-  -- OK: We can generalize a record in a negative position
+  -- OK: We can generalize a record in positive position
   ,
     "                            ({hosts:[Char],info:Char} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char>"
         `isSubtypeOf`
@@ -359,18 +371,24 @@ annotationTests = testGroup
     "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
     "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char | r3>"
     )
-  -- OK: We can generalize a variant in a positive position
-  -- -- FIXME doesn't make sense, get rid of outer arrow...
+  -- Not OK: We can't generalize a variant in positive position
   ,
     "                            ({hosts:[Char]} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char, Warn:Char>"
-        `isSubtypeOf`
+        `isNotSubtypeOf`
     (
     "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
-    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char | r3>"
+    "                            ({hosts:[Char]|r1} -> [{exe:Char,args:Char}]) -> <Ok:{}, Err:Char>"
     )
-  -- Not OK: We can't generalize a record in a positive position
+  -- OK: We can generalize a variant in negative position
   ,
-    "                            ({hosts:[Char]} -> [{exe:Char,foo:Int,args:Char}]) -> <Ok:{}, Err:Char, Warn:Char>"
+    "                            <L:{},R:{}> -> <Ok:{}, Err:Char>"
+        `isSubtypeOf`
+    (
+    "forall r. (r\\L)=>" ++
+    "                            <L:{}|r> -> <Ok:{}, Err:Char>"
+    )  -- Not OK: We can't generalize a record in negative position
+  ,
+    "                            ({hosts:[Char]} -> [{exe:Char,foo:Int,args:Char}]) -> <Ok:{}, Warn:Char>"
         `isNotSubtypeOf`
     (
     "forall r1 r2 r3 . (r3\\Ok, r3\\Err, r1\\hosts, r2\\exe, r2\\args)=>" ++
@@ -629,7 +647,3 @@ assertTrue = return ()
 --
 --       static (Local { ForgeBinary { name = "scl-ui" } })
 --
-
-
-
-

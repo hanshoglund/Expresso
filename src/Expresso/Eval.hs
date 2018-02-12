@@ -133,8 +133,8 @@ import Expresso.Pretty
 import Expresso.Utils hiding (first)-- (Fix(..), cata, (:*:)(..), K(..))
 import qualified Expresso.Parser as Parser
 
-import Control.Monad.Var hiding (Var)
-import qualified Control.Monad.Var as Var
+-- import Control.Monad.Var hiding (Var)
+-- import qualified Control.Monad.Var as Var
 
 #if __GLASGOW_HASKELL__ <= 708
 import Prelude hiding (mapM, maximum, concat, elem, and, any)
@@ -151,6 +151,16 @@ type ApplicativeMonadError e f = (Applicative f, Alternative f, MonadError e f)
 -- A HashMap makes it easy to support record wildcards
 type Env f = HashMap Name (Thunk f)
 
+class Monad f => MonadVar (f :: * -> *) where
+  type VV f :: * -> *
+  newVar   :: a -> f (VV f a)
+  readVar  :: VV f a -> f a
+  writeVar :: VV f a -> a -> f ()
+instance MonadVar IO where
+  type VV IO = IORef
+  newVar = newIORef
+  readVar = readIORef
+  writeVar = writeIORef
 
 -- | Similar to MonadVar, but stores values of a single fixed type.
 class Monad f => MonadMonoVar (f :: * -> *) where
@@ -1723,4 +1733,3 @@ instance MonadEvalStatic (EvalPrimT IO) where
 --       static (Local { Directory { path= "/foo/bar" }})
 --
 --       static (Local { ForgeBinary { name = "scl-ui" } })
-
